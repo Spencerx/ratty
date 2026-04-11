@@ -7,4 +7,7 @@ edition = "2024"
 anyhow = "1.0"
 bevy = { version = "0.14", default-features = true }
 portable-pty = "0.8"
+ratatui = "0.30"
+soft_ratatui = "0.2"
+tobj = "4.0"
 vte = "0.13"

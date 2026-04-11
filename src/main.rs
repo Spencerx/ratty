@@ -1,33 +1,48 @@
 use std::env;
+use std::fs;
 use std::io::{ErrorKind, Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use anyhow::Context;
+use anyhow::{Context, ensure};
 use bevy::app::AppExit;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
-use bevy::sprite::Anchor;
+use bevy::render::mesh::{Indices, PrimitiveTopology};
+use bevy::render::render_asset::RenderAssetUsages;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::texture::ImageSampler;
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
+use ratatui::Terminal;
+use ratatui::widgets::Paragraph;
+use soft_ratatui::embedded_graphics_unicodefonts::{
+    mono_8x13_atlas, mono_8x13_bold_atlas, mono_8x13_italic_atlas,
+};
+use soft_ratatui::{EmbeddedGraphics, SoftBackend};
 use vte::{Params, Parser, Perform};
 
-const WINDOW_WIDTH: f32 = 1200.0;
-const WINDOW_HEIGHT: f32 = 720.0;
-const FONT_SIZE: f32 = 18.0;
-const LINE_HEIGHT: f32 = 20.0;
-const PADDING_X: f32 = 10.0;
-const PADDING_Y: f32 = 10.0;
+const WINDOW_WIDTH: f32 = 1400.0;
+const WINDOW_HEIGHT: f32 = 860.0;
 const DEFAULT_COLS: u16 = 120;
 const DEFAULT_ROWS: u16 = 36;
+const TERMINAL_WORLD_WIDTH: f32 = 14.0;
+const CURSOR_DEPTH: f32 = 0.25;
 
 fn main() -> anyhow::Result<()> {
     let runtime = TerminalRuntime::spawn(DEFAULT_COLS, DEFAULT_ROWS)?;
+    let soft_terminal = SoftTerminal::new(DEFAULT_COLS, DEFAULT_ROWS);
 
     App::new()
         .insert_resource(ClearColor(Color::BLACK))
+        .insert_resource(AmbientLight {
+            color: Color::WHITE,
+            brightness: 150.0,
+        })
         .insert_non_send_resource(runtime)
+        .insert_non_send_resource(soft_terminal)
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "ratterm".into(),
@@ -47,15 +62,16 @@ struct TerminalPlugin;
 
 impl Plugin for TerminalPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_terminal_ui)
+        app.add_systems(Startup, setup_scene)
             .add_systems(Update, pump_pty_output)
             .add_systems(Update, handle_keyboard_input.after(pump_pty_output))
-            .add_systems(Update, refresh_terminal_rows.after(pump_pty_output));
+            .add_systems(Update, redraw_soft_terminal.after(pump_pty_output))
+            .add_systems(Update, sync_cursor_model_transform.after(redraw_soft_terminal));
     }
 }
 
-#[derive(Component, Clone, Copy)]
-struct TerminalRow(usize);
+#[derive(Component)]
+struct CursorModel;
 
 struct TerminalRuntime {
     rx: Receiver<Vec<u8>>,
@@ -137,6 +153,45 @@ impl TerminalRuntime {
     }
 }
 
+struct SoftTerminal {
+    terminal: Terminal<SoftBackend<EmbeddedGraphics>>,
+    image_handle: Option<Handle<Image>>,
+    cols: u16,
+    rows: u16,
+    plane_size: Vec2,
+}
+
+impl SoftTerminal {
+    fn new(cols: u16, rows: u16) -> Self {
+        let font_regular = mono_8x13_atlas();
+        let font_bold = mono_8x13_bold_atlas();
+        let font_italic = mono_8x13_italic_atlas();
+        let backend = SoftBackend::<EmbeddedGraphics>::new(
+            cols,
+            rows,
+            font_regular,
+            Some(font_bold),
+            Some(font_italic),
+        );
+        let pixmap_width = backend.get_pixmap_width() as f32;
+        let pixmap_height = backend.get_pixmap_height() as f32;
+        let plane_height = TERMINAL_WORLD_WIDTH * (pixmap_height / pixmap_width);
+
+        let mut terminal =
+            Terminal::new(backend).expect("soft_ratatui backend is infallible for Terminal::new");
+        let _ = terminal.clear();
+        terminal.backend_mut().cursor = false;
+
+        Self {
+            terminal,
+            image_handle: None,
+            cols,
+            rows,
+            plane_size: Vec2::new(TERMINAL_WORLD_WIDTH, plane_height),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct TerminalState {
     cols: usize,
@@ -161,12 +216,17 @@ impl TerminalState {
         }
     }
 
-    fn row_text(&self, row: usize) -> String {
-        let mut text: String = self.grid[row].iter().collect();
-        while text.ends_with(' ') {
-            text.pop();
+    fn to_multiline_string(&self) -> String {
+        let mut output = String::with_capacity((self.cols + 1) * self.rows);
+        for row_idx in 0..self.rows {
+            for cell in &self.grid[row_idx] {
+                output.push(*cell);
+            }
+            if row_idx + 1 != self.rows {
+                output.push('\n');
+            }
         }
-        text
+        output
     }
 
     fn print(&mut self, ch: char) {
@@ -352,39 +412,225 @@ fn param(params: &Params, index: usize) -> Option<usize> {
         .map(|value| *value as usize)
 }
 
-fn setup_terminal_ui(
+fn setup_scene(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    runtime: NonSend<TerminalRuntime>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut soft_terminal: NonSendMut<SoftTerminal>,
 ) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera3dBundle {
+        transform: Transform::from_xyz(0.0, 0.0, 18.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ..default()
+    });
 
-    let font = asset_server.load("fonts/DejaVuSansMono.ttf");
-    let origin_x = -WINDOW_WIDTH * 0.5 + PADDING_X;
-    let origin_y = WINDOW_HEIGHT * 0.5 - PADDING_Y;
+    commands.spawn(DirectionalLightBundle {
+        directional_light: DirectionalLight {
+            illuminance: 12_000.0,
+            ..default()
+        },
+        transform: Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -1.0, -0.7, 0.0)),
+        ..default()
+    });
 
-    for row in 0..runtime.state.rows {
-        commands.spawn((
-            TerminalRow(row),
-            Text2dBundle {
-                text: Text::from_section(
-                    "",
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: FONT_SIZE,
-                        color: Color::WHITE,
-                    },
-                ),
-                text_anchor: Anchor::TopLeft,
-                transform: Transform::from_translation(Vec3::new(
-                    origin_x,
-                    origin_y - (row as f32 * LINE_HEIGHT),
-                    0.0,
-                )),
-                ..default()
-            },
-        ));
+    let pixmap_width = soft_terminal.terminal.backend().get_pixmap_width() as u32;
+    let pixmap_height = soft_terminal.terminal.backend().get_pixmap_height() as u32;
+    let initial_rgba = soft_terminal.terminal.backend().get_pixmap_data_as_rgba();
+
+    let mut image = Image::new_fill(
+        Extent3d {
+            width: pixmap_width,
+            height: pixmap_height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &[0, 0, 0, 255],
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+    image.data = initial_rgba;
+    image.sampler = ImageSampler::nearest();
+
+    let image_handle = images.add(image);
+    soft_terminal.image_handle = Some(image_handle.clone());
+
+    let terminal_plane = meshes.add(
+        Plane3d::default()
+            .mesh()
+            .size(soft_terminal.plane_size.x, soft_terminal.plane_size.y),
+    );
+    let terminal_material = materials.add(StandardMaterial {
+        base_color_texture: Some(image_handle),
+        unlit: true,
+        cull_mode: None,
+        ..default()
+    });
+
+    commands.spawn(PbrBundle {
+        mesh: terminal_plane,
+        material: terminal_material,
+        transform: Transform::from_rotation(Quat::from_rotation_x(
+            std::f32::consts::FRAC_PI_2,
+        )),
+        ..default()
+    });
+
+    spawn_cursor_model(&mut commands, &mut meshes, &mut materials);
+}
+
+fn spawn_cursor_model(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
+    let root = commands.spawn((CursorModel, SpatialBundle::default())).id();
+    let model_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.95, 0.80, 0.30),
+        metallic: 0.08,
+        perceptual_roughness: 0.48,
+        ..default()
+    });
+
+    let maybe_obj_path = discover_obj_model_path();
+    let maybe_meshes = maybe_obj_path
+        .as_ref()
+        .map(|path| load_obj_meshes(path).map(|meshes| (path, meshes)));
+
+    match maybe_meshes {
+        Some(Ok((path, loaded_meshes))) if !loaded_meshes.is_empty() => {
+            info!(
+                "loaded cursor model from {} ({} mesh parts)",
+                path.display(),
+                loaded_meshes.len()
+            );
+            commands.entity(root).with_children(|parent| {
+                for mesh in loaded_meshes {
+                    parent.spawn(PbrBundle {
+                        mesh: meshes.add(mesh),
+                        material: model_material.clone(),
+                        ..default()
+                    });
+                }
+            });
+        }
+        Some(Ok((_path, _))) => {
+            warn!("model directory contains an OBJ with no mesh data, using a fallback cursor cube");
+            spawn_fallback_cursor_cube(commands, root, meshes, model_material);
+        }
+        Some(Err(error)) => {
+            warn!("failed to load OBJ cursor model: {error:#}");
+            spawn_fallback_cursor_cube(commands, root, meshes, model_material);
+        }
+        None => {
+            warn!("no OBJ file found in model/; using a fallback cursor cube");
+            spawn_fallback_cursor_cube(commands, root, meshes, model_material);
+        }
     }
+}
+
+fn spawn_fallback_cursor_cube(
+    commands: &mut Commands,
+    root: Entity,
+    meshes: &mut Assets<Mesh>,
+    material: Handle<StandardMaterial>,
+) {
+    commands.entity(root).with_children(|parent| {
+        parent.spawn(PbrBundle {
+            mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
+            material,
+            ..default()
+        });
+    });
+}
+
+fn discover_obj_model_path() -> Option<PathBuf> {
+    let entries = fs::read_dir("model").ok()?;
+    let mut candidates = Vec::new();
+
+    for entry in entries {
+        let entry = entry.ok()?;
+        let path = entry.path();
+        let is_obj = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.eq_ignore_ascii_case("obj"))
+            .unwrap_or(false);
+        if is_obj {
+            candidates.push(path);
+        }
+    }
+
+    candidates.sort();
+    candidates.into_iter().next()
+}
+
+fn load_obj_meshes(path: &Path) -> anyhow::Result<Vec<Mesh>> {
+    let options = tobj::LoadOptions {
+        triangulate: true,
+        single_index: true,
+        ..default()
+    };
+    let (models, _materials) =
+        tobj::load_obj(path, &options).with_context(|| format!("failed to read {}", path.display()))?;
+
+    let mut output = Vec::new();
+    for model in models {
+        let source_mesh = model.mesh;
+        if source_mesh.positions.is_empty() {
+            continue;
+        }
+
+        let mut positions = Vec::<[f32; 3]>::with_capacity(source_mesh.positions.len() / 3);
+        let mut min = Vec3::splat(f32::INFINITY);
+        let mut max = Vec3::splat(f32::NEG_INFINITY);
+
+        for pos in source_mesh.positions.chunks_exact(3) {
+            let point = Vec3::new(pos[0], pos[1], pos[2]);
+            min = min.min(point);
+            max = max.max(point);
+            positions.push([point.x, point.y, point.z]);
+        }
+
+        let center = (min + max) * 0.5;
+        let extent = max - min;
+        let max_extent = extent.max_element().max(1e-6);
+
+        for p in &mut positions {
+            p[0] = (p[0] - center.x) / max_extent;
+            p[1] = (p[1] - center.y) / max_extent;
+            p[2] = (p[2] - center.z) / max_extent;
+        }
+
+        let mut mesh = Mesh::new(
+            PrimitiveTopology::TriangleList,
+            RenderAssetUsages::default(),
+        );
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+
+        if !source_mesh.normals.is_empty() {
+            let normals = source_mesh
+                .normals
+                .chunks_exact(3)
+                .map(|normal| [normal[0], normal[1], normal[2]])
+                .collect::<Vec<[f32; 3]>>();
+            mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        }
+
+        if !source_mesh.texcoords.is_empty() {
+            let uvs = source_mesh
+                .texcoords
+                .chunks_exact(2)
+                .map(|uv| [uv[0], 1.0 - uv[1]])
+                .collect::<Vec<[f32; 2]>>();
+            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        }
+
+        mesh.insert_indices(Indices::U32(source_mesh.indices));
+        output.push(mesh);
+    }
+
+    ensure!(!output.is_empty(), "no mesh content inside {}", path.display());
+    Ok(output)
 }
 
 fn pump_pty_output(mut runtime: NonSendMut<TerminalRuntime>, mut app_exit: EventWriter<AppExit>) {
@@ -428,7 +674,8 @@ fn handle_keyboard_input(
             continue;
         }
 
-        let ctrl_pressed = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+        let ctrl_pressed =
+            keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
         match &event.logical_key {
             Key::Character(chars) => {
                 if ctrl_pressed {
@@ -459,20 +706,69 @@ fn handle_keyboard_input(
     runtime.write_input(&input);
 }
 
+fn redraw_soft_terminal(
+    runtime: NonSend<TerminalRuntime>,
+    mut soft_terminal: NonSendMut<SoftTerminal>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    let text = runtime.state.to_multiline_string();
+    let cursor_x = runtime
+        .state
+        .cursor_x
+        .min(soft_terminal.cols.saturating_sub(1) as usize) as u16;
+    let cursor_y = runtime
+        .state
+        .cursor_y
+        .min(soft_terminal.rows.saturating_sub(1) as usize) as u16;
+
+    let _ = soft_terminal.terminal.draw(|frame| {
+        let area = frame.area();
+        frame.render_widget(Paragraph::new(text.as_str()), area);
+        frame.set_cursor_position((cursor_x, cursor_y));
+    });
+
+    if let Some(handle) = soft_terminal.image_handle.as_ref()
+        && let Some(image) = images.get_mut(handle)
+    {
+        image.data = soft_terminal.terminal.backend().get_pixmap_data_as_rgba();
+    }
+}
+
+fn sync_cursor_model_transform(
+    runtime: NonSend<TerminalRuntime>,
+    soft_terminal: NonSend<SoftTerminal>,
+    time: Res<Time>,
+    mut cursor_model_query: Query<&mut Transform, With<CursorModel>>,
+) {
+    let cols = soft_terminal.cols.max(1) as f32;
+    let rows = soft_terminal.rows.max(1) as f32;
+    let cell_width = soft_terminal.plane_size.x / cols;
+    let cell_height = soft_terminal.plane_size.y / rows;
+
+    let cursor_col = runtime
+        .state
+        .cursor_x
+        .min(soft_terminal.cols.saturating_sub(1) as usize) as f32;
+    let cursor_row = runtime
+        .state
+        .cursor_y
+        .min(soft_terminal.rows.saturating_sub(1) as usize) as f32;
+
+    let world_x = -soft_terminal.plane_size.x * 0.5 + (cursor_col + 0.5) * cell_width;
+    let world_y = soft_terminal.plane_size.y * 0.5 - (cursor_row + 0.5) * cell_height;
+    let spin = time.elapsed_seconds() * 1.25;
+
+    for mut transform in &mut cursor_model_query {
+        transform.translation = Vec3::new(world_x, world_y, CURSOR_DEPTH);
+        transform.rotation = Quat::from_rotation_y(spin) * Quat::from_rotation_x(-0.35);
+        transform.scale = Vec3::splat(cell_width.min(cell_height) * 0.78);
+    }
+}
+
 fn ctrl_character_byte(chars: &str) -> Option<u8> {
     let ch = chars.chars().next()?.to_ascii_lowercase();
     if !ch.is_ascii_lowercase() {
         return None;
     }
-
     Some((ch as u8) - b'a' + 1)
-}
-
-fn refresh_terminal_rows(
-    runtime: NonSend<TerminalRuntime>,
-    mut row_text_query: Query<(&TerminalRow, &mut Text)>,
-) {
-    for (row, mut text) in &mut row_text_query {
-        text.sections[0].value = runtime.state.row_text(row.0);
-    }
 }
