@@ -3,7 +3,6 @@ use std::sync::mpsc::TryRecvError;
 use bevy::app::AppExit;
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
-use bevy::render::render_resource::Extent3d;
 use bevy::window::{PrimaryWindow, WindowResized};
 
 use crate::config::CURSOR_DEPTH;
@@ -13,15 +12,20 @@ use crate::model::spawn_cursor_model;
 use crate::mouse::TerminalSelection;
 use crate::runtime::TerminalRuntime;
 use crate::scene::{ModelLoadState, TerminalSprite, TerminalViewport};
-use crate::terminal::{TerminalSurface, TerminalWidget};
+use crate::terminal::{TerminalRedrawState, TerminalSurface, TerminalWidget};
 
 pub fn pump_pty_output(
     mut runtime: NonSendMut<TerminalRuntime>,
     mut app_exit: MessageWriter<AppExit>,
+    mut redraw: ResMut<TerminalRedrawState>,
 ) {
+    let mut processed_output = false;
     loop {
         match runtime.rx.try_recv() {
-            Ok(chunk) => runtime.parser.process(&chunk),
+            Ok(chunk) => {
+                runtime.parser.process(&chunk);
+                processed_output = true;
+            }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
                 if !runtime.pty_disconnected {
@@ -32,20 +36,29 @@ pub fn pump_pty_output(
             }
         }
     }
+
+    if processed_output {
+        redraw.request();
+    }
 }
 
 pub fn redraw_soft_terminal(
     runtime: NonSend<TerminalRuntime>,
     mut terminal: NonSendMut<TerminalSurface>,
     selection: Res<TerminalSelection>,
+    mut redraw: ResMut<TerminalRedrawState>,
     mut images: ResMut<Assets<Image>>,
     mut model_load_state: ResMut<ModelLoadState>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let screen = runtime.parser.screen();
+    let needs_redraw = redraw.take();
+    if !needs_redraw && model_load_state.loaded {
+        return;
+    }
 
+    let screen = runtime.parser.screen();
     let _ = terminal.tui.draw(|frame| {
         frame.render_widget(
             TerminalWidget {
@@ -56,15 +69,11 @@ pub fn redraw_soft_terminal(
         );
     });
 
-    if let Some(handle) = terminal.image_handle.as_ref()
-        && let Some(image) = images.get_mut(handle)
-    {
-        image.data = Some(terminal.tui.backend().get_pixmap_data_as_rgba());
+    terminal.sync_image(&mut images);
 
-        if !model_load_state.loaded {
-            spawn_cursor_model(&mut commands, &mut meshes, &mut materials);
-            model_load_state.loaded = true;
-        }
+    if !model_load_state.loaded {
+        spawn_cursor_model(&mut commands, &mut meshes, &mut materials);
+        model_load_state.loaded = true;
     }
 }
 
@@ -73,6 +82,7 @@ pub fn handle_window_resize(
     primary_window: Query<Entity, With<PrimaryWindow>>,
     mut runtime: NonSendMut<TerminalRuntime>,
     mut terminal: NonSendMut<TerminalSurface>,
+    mut redraw: ResMut<TerminalRedrawState>,
     mut viewport: ResMut<TerminalViewport>,
     mut sprite_query: Query<&mut Sprite, With<TerminalSprite>>,
     mut images: ResMut<Assets<Image>>,
@@ -106,17 +116,8 @@ pub fn handle_window_resize(
 
     runtime.resize(cols, rows);
     terminal.resize(cols, rows);
-
-    if let Some(handle) = terminal.image_handle.as_ref()
-        && let Some(image) = images.get_mut(handle)
-    {
-        image.resize(Extent3d {
-            width: terminal.tui.backend().get_pixmap_width() as u32,
-            height: terminal.tui.backend().get_pixmap_height() as u32,
-            depth_or_array_layers: 1,
-        });
-        image.data = Some(terminal.tui.backend().get_pixmap_data_as_rgba());
-    }
+    terminal.sync_image(&mut images);
+    redraw.request();
 
     for mut sprite in &mut sprite_query {
         sprite.custom_size = Some(viewport_size);

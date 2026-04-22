@@ -7,6 +7,7 @@ use arboard::Clipboard;
 
 use crate::mouse::TerminalSelection;
 use crate::runtime::TerminalRuntime;
+use crate::terminal::TerminalRedrawState;
 
 pub struct TerminalClipboard {
     clipboard: Option<Clipboard>,
@@ -78,6 +79,7 @@ pub fn handle_keyboard_input(
     mut selection: ResMut<TerminalSelection>,
     mut clipboard: NonSendMut<TerminalClipboard>,
     runtime: NonSend<TerminalRuntime>,
+    mut redraw: ResMut<TerminalRedrawState>,
 ) {
     for event in keyboard_events.read() {
         if event.state == ButtonState::Pressed && !event.repeat {
@@ -87,7 +89,9 @@ pub fn handle_keyboard_input(
                 {
                     clipboard.copy(&text);
                 }
-                selection.clear();
+                if selection.clear() {
+                    redraw.request();
+                }
                 continue;
             }
 
@@ -101,13 +105,18 @@ pub fn handle_keyboard_input(
                 } else {
                     warn!("failed to read clipboard contents for paste");
                 }
-                selection.clear();
+                if selection.clear() {
+                    redraw.request();
+                }
                 continue;
             }
         }
 
-        if event.state == ButtonState::Pressed && !is_modifier_key(event.key_code) {
-            selection.clear();
+        if event.state == ButtonState::Pressed
+            && !is_modifier_key(event.key_code)
+            && selection.clear()
+        {
+            redraw.request();
         }
 
         if let Some(input) = keyboard.handle_event(event) {

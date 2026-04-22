@@ -61,27 +61,35 @@ impl TerminalSelection {
         })
     }
 
-    pub fn begin(&mut self, cell: UVec2) {
+    pub fn begin(&mut self, cell: UVec2) -> bool {
+        let changed = self.start != Some(cell) || self.end != Some(cell) || !self.dragging;
         self.start = Some(cell);
         self.end = Some(cell);
         self.dragging = true;
+        changed
     }
 
-    pub fn update(&mut self, cell: UVec2) {
+    pub fn update(&mut self, cell: UVec2) -> bool {
         if self.dragging && self.end != Some(cell) {
             self.end = Some(cell);
+            return true;
         }
+        false
     }
 
-    pub fn end(&mut self) {
+    pub fn end(&mut self) -> bool {
+        let changed = self.dragging;
         self.dragging = false;
+        changed
     }
 
-    pub fn clear(&mut self) {
+    pub fn clear(&mut self) -> bool {
+        let changed = self.start.is_some() || self.end.is_some() || self.dragging;
         self.start = None;
         self.end = None;
         self.dragging = false;
         self.cursor_position = None;
+        changed
     }
 
     pub fn set_cursor_position(&mut self, position: Vec2) {
@@ -146,6 +154,7 @@ pub fn handle_mouse_input(
     terminal: NonSend<TerminalSurface>,
     viewport: Res<TerminalViewport>,
     mut selection: ResMut<TerminalSelection>,
+    mut redraw: ResMut<crate::terminal::TerminalRedrawState>,
 ) {
     let Ok(primary_window) = primary_window.single() else {
         return;
@@ -159,8 +168,9 @@ pub fn handle_mouse_input(
         selection.set_cursor_position(event.position);
         if selection.dragging
             && let Some(cell) = position_to_cell(event.position, &viewport, &terminal)
+            && selection.update(cell)
         {
-            selection.update(cell);
+            redraw.request();
         }
     }
 
@@ -173,12 +183,13 @@ pub fn handle_mouse_input(
             (MouseButton::Left, ButtonState::Pressed) => {
                 if let Some(pos) = selection.cursor_position()
                     && let Some(cell) = position_to_cell(pos, &viewport, &terminal)
+                    && selection.begin(cell)
                 {
-                    selection.begin(cell);
+                    redraw.request();
                 }
             }
             (MouseButton::Left, ButtonState::Released) => {
-                selection.end();
+                let _ = selection.end();
             }
             _ => {}
         }
