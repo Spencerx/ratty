@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
     let terminal = TerminalSurface::new(DEFAULT_COLS, DEFAULT_ROWS);
 
     App::new()
-        .insert_resource(ClearColor(Color::srgb(0.94, 0.92, 0.88)))
+        .insert_resource(ClearColor(Color::srgb_u8(31, 31, 40)))
         .insert_non_send_resource(runtime)
         .insert_non_send_resource(terminal)
         .add_plugins(DefaultPlugins.set(WindowPlugin {

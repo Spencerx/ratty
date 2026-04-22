@@ -24,9 +24,11 @@ pub fn spawn_3d_asset_showcase(
         ))
         .id();
     let material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.86, 0.52, 0.22),
-        metallic: 0.1,
-        perceptual_roughness: 0.55,
+        base_color: Color::srgb_u8(255, 255, 255),
+        emissive: LinearRgba::rgb(0.35, 0.35, 0.35),
+        metallic: 0.0,
+        perceptual_roughness: 0.28,
+        reflectance: 0.6,
         ..default()
     });
 
