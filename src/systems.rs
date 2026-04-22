@@ -10,7 +10,6 @@ use bevy::window::{PrimaryWindow, WindowResized};
 
 use crate::config::CURSOR_DEPTH;
 use crate::config::CURSOR_SCALE_FACTOR;
-use crate::config::VIEW_PADDING;
 use crate::model::AssetShowcase;
 use crate::runtime::TerminalRuntime;
 use crate::scene::{TerminalSprite, TerminalViewport};
@@ -128,10 +127,7 @@ pub fn handle_window_resize(
         return;
     };
 
-    let viewport_size = Vec2::new(
-        (window_size.x - 2.0 * VIEW_PADDING).max(1.0),
-        (window_size.y - 2.0 * VIEW_PADDING).max(1.0),
-    );
+    let viewport_size = Vec2::new(window_size.x.max(1.0), window_size.y.max(1.0));
     viewport.size = viewport_size;
     viewport.center = Vec2::ZERO;
 

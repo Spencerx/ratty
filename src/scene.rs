@@ -4,7 +4,7 @@ use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-use crate::config::{VIEW_PADDING, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::config::{WINDOW_HEIGHT, WINDOW_WIDTH};
 use crate::model::spawn_3d_asset_showcase;
 use crate::terminal::TerminalSurface;
 
@@ -66,10 +66,7 @@ pub fn setup_scene(
     let image_handle = images.add(image);
     terminal.image_handle = Some(image_handle.clone());
 
-    let viewport_size = Vec2::new(
-        WINDOW_WIDTH - 2.0 * VIEW_PADDING,
-        WINDOW_HEIGHT - 2.0 * VIEW_PADDING,
-    );
+    let viewport_size = Vec2::new(WINDOW_WIDTH, WINDOW_HEIGHT);
     let viewport_center = Vec2::ZERO;
     commands.insert_resource(TerminalViewport {
         size: viewport_size,
