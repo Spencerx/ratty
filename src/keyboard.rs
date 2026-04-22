@@ -154,10 +154,34 @@ fn translate_key(
         KeyCode::Space => bytes.push(b' '),
         KeyCode::Backspace => bytes.push(0x7f),
         KeyCode::Escape => bytes.push(0x1b),
-        KeyCode::ArrowUp => bytes.extend_from_slice(b"\x1b[A"),
-        KeyCode::ArrowDown => bytes.extend_from_slice(b"\x1b[B"),
-        KeyCode::ArrowRight => bytes.extend_from_slice(b"\x1b[C"),
-        KeyCode::ArrowLeft => bytes.extend_from_slice(b"\x1b[D"),
+        KeyCode::ArrowUp => {
+            if ctrl_pressed {
+                bytes.extend_from_slice(b"\x1b[1;5A");
+            } else {
+                bytes.extend_from_slice(b"\x1b[A");
+            }
+        }
+        KeyCode::ArrowDown => {
+            if ctrl_pressed {
+                bytes.extend_from_slice(b"\x1b[1;5B");
+            } else {
+                bytes.extend_from_slice(b"\x1b[B");
+            }
+        }
+        KeyCode::ArrowRight => {
+            if ctrl_pressed {
+                bytes.extend_from_slice(b"\x1b[1;5C");
+            } else {
+                bytes.extend_from_slice(b"\x1b[C");
+            }
+        }
+        KeyCode::ArrowLeft => {
+            if ctrl_pressed {
+                bytes.extend_from_slice(b"\x1b[1;5D");
+            } else {
+                bytes.extend_from_slice(b"\x1b[D");
+            }
+        }
         KeyCode::Delete => bytes.extend_from_slice(b"\x1b[3~"),
         KeyCode::Home => bytes.extend_from_slice(b"\x1b[H"),
         KeyCode::End => bytes.extend_from_slice(b"\x1b[F"),
