@@ -40,7 +40,7 @@ pub fn spawn_cursor_model(
     match maybe_meshes {
         Some(Ok((path, loaded_meshes))) if !loaded_meshes.is_empty() => {
             info!(
-                "loaded showcase model from {} ({} mesh parts)",
+                "loaded cursor model from {} ({} mesh parts)",
                 path.display(),
                 loaded_meshes.len()
             );
@@ -55,7 +55,7 @@ pub fn spawn_cursor_model(
             });
         }
         Some(Err(error)) => {
-            warn!("failed to load OBJ model from model/: {error:#}");
+            warn!("failed to load OBJ model from assets/model: {error:#}");
             commands.entity(root).with_children(|parent| {
                 parent.spawn((
                     Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -64,7 +64,7 @@ pub fn spawn_cursor_model(
             });
         }
         _ => {
-            warn!("no OBJ model found in model/; using cube cursor fallback");
+            warn!("no OBJ model found in assets/model; using cube cursor fallback");
             commands.entity(root).with_children(|parent| {
                 parent.spawn((
                     Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -76,7 +76,7 @@ pub fn spawn_cursor_model(
 }
 
 fn discover_obj_model_path() -> Option<PathBuf> {
-    let entries = fs::read_dir("model").ok()?;
+    let entries = fs::read_dir("assets/model").ok()?;
     let mut candidates = Vec::new();
 
     for entry in entries {
