@@ -3912,7 +3912,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ratterm"
+name = "ratty"
 version = "0.1.0"
 dependencies = [
  "anyhow",
