@@ -7,6 +7,7 @@ mod systems;
 mod terminal;
 
 use bevy::prelude::*;
+use bevy::window::WindowResolution;
 
 use crate::config::{DEFAULT_COLS, DEFAULT_ROWS, WINDOW_HEIGHT, WINDOW_WIDTH};
 use crate::plugin::TerminalPlugin;
@@ -21,14 +22,17 @@ fn main() -> anyhow::Result<()> {
         .insert_resource(ClearColor(Color::srgb_u8(31, 31, 40)))
         .insert_non_send_resource(runtime)
         .insert_non_send_resource(terminal)
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: env!("CARGO_PKG_NAME").into(),
-                resolution: (WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32).into(),
+        .add_plugins(
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: env!("CARGO_PKG_NAME").into(),
+                    resolution: WindowResolution::new(WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32)
+                        .with_scale_factor_override(1.0),
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }))
+        )
         .add_plugins(TerminalPlugin)
         .run();
 
