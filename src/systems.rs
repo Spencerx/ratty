@@ -39,6 +39,7 @@ pub fn handle_keyboard_input(
         match event.key_code {
             KeyCode::Enter | KeyCode::NumpadEnter => input.push(b'\r'),
             KeyCode::Tab => input.push(b'\t'),
+            KeyCode::Space => input.push(b' '),
             KeyCode::Backspace => input.push(0x7f),
             KeyCode::Escape => input.push(0x1b),
             KeyCode::ArrowUp => input.extend_from_slice(b"\x1b[A"),

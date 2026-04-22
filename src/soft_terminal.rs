@@ -6,7 +6,7 @@ use crate::config::TERMINAL_FONT_SIZE;
 
 static TERMINAL_FONT_DATA: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/assets/fonts/CaskaydiaCoveNerdFontComplete-Regular.otf"
+    "/assets/fonts/UbuntuMonoLigaturized-Regular.ttf"
 ));
 
 pub struct SoftTerminal {
