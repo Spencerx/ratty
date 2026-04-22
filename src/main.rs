@@ -1,4 +1,5 @@
 mod config;
+mod keyboard;
 mod model;
 mod plugin;
 mod runtime;

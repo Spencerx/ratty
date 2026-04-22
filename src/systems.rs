@@ -2,8 +2,6 @@ use std::sync::mpsc::TryRecvError;
 
 use bevy::app::AppExit;
 use bevy::ecs::message::{MessageReader, MessageWriter};
-use bevy::input::ButtonState;
-use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
 use bevy::render::render_resource::Extent3d;
 use bevy::window::{PrimaryWindow, WindowResized};
@@ -15,57 +13,6 @@ use crate::model::spawn_cursor_model;
 use crate::runtime::TerminalRuntime;
 use crate::scene::{ModelLoadState, TerminalSprite, TerminalViewport};
 use crate::terminal::{TerminalSurface, TerminalWidget};
-
-pub fn handle_keyboard_input(
-    mut keyboard_events: MessageReader<KeyboardInput>,
-    keys: Res<ButtonInput<KeyCode>>,
-    runtime: NonSend<TerminalRuntime>,
-) {
-    let ctrl_pressed = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
-    let alt_pressed = keys.pressed(KeyCode::AltLeft) || keys.pressed(KeyCode::AltRight);
-
-    for event in keyboard_events.read() {
-        if event.state != ButtonState::Pressed {
-            continue;
-        }
-
-        let mut input = Vec::new();
-        if ctrl_pressed {
-            if let Some(ctrl) = ctrl_keycode_byte(event.key_code) {
-                input.push(ctrl);
-                runtime.write_input(&input);
-                continue;
-            }
-        }
-
-        match event.key_code {
-            KeyCode::Enter | KeyCode::NumpadEnter => input.push(b'\r'),
-            KeyCode::Tab => input.push(b'\t'),
-            KeyCode::Space => input.push(b' '),
-            KeyCode::Backspace => input.push(0x7f),
-            KeyCode::Escape => input.push(0x1b),
-            KeyCode::ArrowUp => input.extend_from_slice(b"\x1b[A"),
-            KeyCode::ArrowDown => input.extend_from_slice(b"\x1b[B"),
-            KeyCode::ArrowRight => input.extend_from_slice(b"\x1b[C"),
-            KeyCode::ArrowLeft => input.extend_from_slice(b"\x1b[D"),
-            KeyCode::Delete => input.extend_from_slice(b"\x1b[3~"),
-            KeyCode::Home => input.extend_from_slice(b"\x1b[H"),
-            KeyCode::End => input.extend_from_slice(b"\x1b[F"),
-            KeyCode::PageUp => input.extend_from_slice(b"\x1b[5~"),
-            KeyCode::PageDown => input.extend_from_slice(b"\x1b[6~"),
-            _ => {
-                if let Key::Character(chars) = &event.logical_key {
-                    if alt_pressed {
-                        input.push(0x1b);
-                    }
-                    input.extend_from_slice(chars.as_bytes());
-                }
-            }
-        }
-
-        runtime.write_input(&input);
-    }
-}
 
 pub fn pump_pty_output(
     mut runtime: NonSendMut<TerminalRuntime>,
@@ -200,37 +147,5 @@ pub fn sync_asset_to_terminal_cursor(
         } else {
             Visibility::Visible
         };
-    }
-}
-
-fn ctrl_keycode_byte(key: KeyCode) -> Option<u8> {
-    match key {
-        KeyCode::KeyA => Some(0x01),
-        KeyCode::KeyB => Some(0x02),
-        KeyCode::KeyC => Some(0x03),
-        KeyCode::KeyD => Some(0x04),
-        KeyCode::KeyE => Some(0x05),
-        KeyCode::KeyF => Some(0x06),
-        KeyCode::KeyG => Some(0x07),
-        KeyCode::KeyH => Some(0x08),
-        KeyCode::KeyI => Some(0x09),
-        KeyCode::KeyJ => Some(0x0a),
-        KeyCode::KeyK => Some(0x0b),
-        KeyCode::KeyL => Some(0x0c),
-        KeyCode::KeyM => Some(0x0d),
-        KeyCode::KeyN => Some(0x0e),
-        KeyCode::KeyO => Some(0x0f),
-        KeyCode::KeyP => Some(0x10),
-        KeyCode::KeyQ => Some(0x11),
-        KeyCode::KeyR => Some(0x12),
-        KeyCode::KeyS => Some(0x13),
-        KeyCode::KeyT => Some(0x14),
-        KeyCode::KeyU => Some(0x15),
-        KeyCode::KeyV => Some(0x16),
-        KeyCode::KeyW => Some(0x17),
-        KeyCode::KeyX => Some(0x18),
-        KeyCode::KeyY => Some(0x19),
-        KeyCode::KeyZ => Some(0x1a),
-        _ => None,
     }
 }

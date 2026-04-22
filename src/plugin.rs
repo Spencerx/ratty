@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 
+use crate::keyboard::handle_keyboard_input;
 use crate::scene::setup_scene;
 use crate::systems::{
-    handle_keyboard_input, handle_window_resize, pump_pty_output, redraw_soft_terminal,
-    sync_asset_to_terminal_cursor,
+    handle_window_resize, pump_pty_output, redraw_soft_terminal, sync_asset_to_terminal_cursor,
 };
 
 pub struct TerminalPlugin;
