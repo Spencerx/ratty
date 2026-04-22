@@ -5,14 +5,13 @@ use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
-use ratatui::style::Style;
-use ratatui::widgets::Paragraph;
 
-use crate::config::{CURSOR_DEPTH, CURSOR_SCALE_FACTOR, THEME_BG, THEME_FG};
+use crate::config::CURSOR_DEPTH;
+use crate::config::CURSOR_SCALE_FACTOR;
 use crate::model::AssetShowcase;
 use crate::runtime::TerminalRuntime;
 use crate::scene::TerminalViewport;
-use crate::soft_terminal::SoftTerminal;
+use crate::terminal::{TerminalSurface, TerminalWidget};
 
 pub fn handle_keyboard_input(
     mut keyboard_events: MessageReader<KeyboardInput>,
@@ -86,44 +85,39 @@ pub fn pump_pty_output(
 
 pub fn redraw_soft_terminal(
     runtime: NonSend<TerminalRuntime>,
-    mut soft_terminal: NonSendMut<SoftTerminal>,
+    mut terminal: NonSendMut<TerminalSurface>,
     mut images: ResMut<Assets<Image>>,
 ) {
     let screen = runtime.parser.screen();
-    let text = screen.contents();
 
-    let _ = soft_terminal.terminal.draw(|frame| {
-        let area = frame.area();
-        frame.render_widget(
-            Paragraph::new(text.as_str()).style(Style::default().fg(THEME_FG).bg(THEME_BG)),
-            area,
-        );
+    let _ = terminal.tui.draw(|frame| {
+        frame.render_widget(TerminalWidget { screen }, frame.area());
     });
 
-    if let Some(handle) = soft_terminal.image_handle.as_ref()
+    if let Some(handle) = terminal.image_handle.as_ref()
         && let Some(image) = images.get_mut(handle)
     {
-        image.data = Some(soft_terminal.terminal.backend().get_pixmap_data_as_rgba());
+        image.data = Some(terminal.tui.backend().get_pixmap_data_as_rgba());
     }
 }
 
 pub fn sync_asset_to_terminal_cursor(
     runtime: NonSend<TerminalRuntime>,
-    soft_terminal: NonSend<SoftTerminal>,
+    terminal: NonSend<TerminalSurface>,
     viewport: Res<TerminalViewport>,
     time: Res<Time>,
     mut query: Query<(&mut Transform, &mut Visibility), With<AssetShowcase>>,
 ) {
-    let cols = soft_terminal.cols.max(1) as f32;
-    let rows = soft_terminal.rows.max(1) as f32;
+    let cols = terminal.cols.max(1) as f32;
+    let rows = terminal.rows.max(1) as f32;
     let cell_width = viewport.size.x / cols;
     let cell_height = viewport.size.y / rows;
     let scale = cell_width.min(cell_height) * CURSOR_SCALE_FACTOR;
 
     let screen = runtime.parser.screen();
     let (cursor_row, cursor_col) = screen.cursor_position();
-    let cursor_col = cursor_col.min(soft_terminal.cols.saturating_sub(1)) as f32;
-    let cursor_row = cursor_row.min(soft_terminal.rows.saturating_sub(1)) as f32;
+    let cursor_col = cursor_col.min(terminal.cols.saturating_sub(1)) as f32;
+    let cursor_row = cursor_row.min(terminal.rows.saturating_sub(1)) as f32;
 
     let world_x = viewport.center.x - viewport.size.x * 0.5 + (cursor_col + 0.5) * cell_width;
     let world_y = viewport.center.y + viewport.size.y * 0.5 - (cursor_row + 0.5) * cell_height;
