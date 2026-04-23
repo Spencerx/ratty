@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::render::render_resource::Extent3d;
 use ratatui::Terminal;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -39,6 +38,7 @@ impl TerminalRedrawState {
 pub struct TerminalSurface {
     pub tui: Terminal<SoftBackend<ParleyText>>,
     pub image_handle: Option<Handle<Image>>,
+    pub back_image_handle: Option<Handle<Image>>,
     pub cols: u16,
     pub rows: u16,
 }
@@ -56,6 +56,7 @@ impl TerminalSurface {
         Self {
             tui,
             image_handle: None,
+            back_image_handle: None,
             cols,
             rows,
         }
@@ -71,38 +72,6 @@ impl TerminalSurface {
         self.tui.backend_mut().cursor = false;
         self.cols = cols;
         self.rows = rows;
-    }
-
-    pub fn sync_image(&self, images: &mut Assets<Image>) {
-        let Some(handle) = self.image_handle.as_ref() else {
-            return;
-        };
-        let Some(image) = images.get_mut(handle) else {
-            return;
-        };
-
-        let width = self.tui.backend().get_pixmap_width() as u32;
-        let height = self.tui.backend().get_pixmap_height() as u32;
-        let rgba_len = width as usize * height as usize * 4;
-
-        image.resize(Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        });
-
-        let data = image.data.get_or_insert_with(Vec::new);
-        if data.len() != rgba_len {
-            data.resize(rgba_len, 0);
-        }
-
-        let rgb = self.tui.backend().get_pixmap_data();
-        for (dst, src) in data.chunks_exact_mut(4).zip(rgb.chunks_exact(3)) {
-            dst[0] = src[0];
-            dst[1] = src[1];
-            dst[2] = src[2];
-            dst[3] = 255;
-        }
     }
 }
 

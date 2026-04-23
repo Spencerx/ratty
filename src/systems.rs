@@ -11,11 +11,12 @@ use crate::config::CURSOR_SCALE_FACTOR;
 use crate::model::CursorModel;
 use crate::model::spawn_cursor_model;
 use crate::mouse::TerminalSelection;
+use crate::rendering::{sync_plane_texture, sync_terminal_debug_image, sync_terminal_image};
+use crate::runtime::TerminalRuntime;
 use crate::scene::{
     ModelLoadState, TerminalPlane, TerminalPlaneBack, TerminalPresentation,
     TerminalPresentationMode, TerminalSprite, TerminalViewport,
 };
-use crate::runtime::TerminalRuntime;
 use crate::terminal::{TerminalRedrawState, TerminalSurface, TerminalWidget};
 
 pub fn pump_pty_output(
@@ -58,6 +59,7 @@ pub fn redraw_soft_terminal(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     plane_materials: Query<&MeshMaterial3d<StandardMaterial>, With<TerminalPlane>>,
+    plane_back_materials: Query<&MeshMaterial3d<StandardMaterial>, With<TerminalPlaneBack>>,
 ) {
     let needs_redraw = redraw.take();
     let force_live_redraw = presentation.mode == TerminalPresentationMode::Plane3d;
@@ -76,15 +78,19 @@ pub fn redraw_soft_terminal(
         );
     });
 
-    terminal.sync_image(&mut images);
+    sync_terminal_image(&terminal, &mut images);
+    sync_terminal_debug_image(&terminal, &mut images, screen);
 
-    if let Some(image_handle) = terminal.image_handle.as_ref() {
-        for material_handle in &plane_materials {
-            if let Some(material) = materials.get_mut(&material_handle.0) {
-                material.base_color_texture = Some(image_handle.clone());
-            }
-        }
-    }
+    sync_plane_texture(
+        terminal.image_handle.as_ref(),
+        &plane_materials,
+        &mut materials,
+    );
+    sync_plane_texture(
+        terminal.back_image_handle.as_ref(),
+        &plane_back_materials,
+        &mut materials,
+    );
 
     if !model_load_state.loaded {
         spawn_cursor_model(&mut commands, &mut meshes, &mut materials);
@@ -140,7 +146,7 @@ pub fn handle_window_resize(
 
     runtime.resize(cols, rows);
     terminal.resize(cols, rows);
-    terminal.sync_image(&mut images);
+    sync_terminal_image(&terminal, &mut images);
     redraw.request();
 
     for mut sprite in &mut sprite_query {
@@ -168,8 +174,14 @@ pub fn sync_asset_to_terminal_cursor(
         (With<CursorModel>, Without<TerminalPlane>),
     >,
 ) {
-    let (translation, rotation, scale, cursor_visibility) =
-        cursor_pose(&runtime, &terminal, &viewport, presentation.mode, time.elapsed_secs(), &plane_query);
+    let (translation, rotation, scale, cursor_visibility) = cursor_pose(
+        &runtime,
+        &terminal,
+        &viewport,
+        presentation.mode,
+        time.elapsed_secs(),
+        &plane_query,
+    );
     for (mut transform, mut visibility) in &mut query {
         transform.translation = translation;
         transform.rotation = rotation;

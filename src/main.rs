@@ -3,6 +3,7 @@ mod keyboard;
 mod model;
 mod mouse;
 mod plugin;
+mod rendering;
 mod runtime;
 mod scene;
 mod systems;

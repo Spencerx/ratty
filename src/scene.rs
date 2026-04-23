@@ -110,22 +110,15 @@ pub fn setup_scene(
     let pixmap_width = terminal.tui.backend().get_pixmap_width() as u32;
     let pixmap_height = terminal.tui.backend().get_pixmap_height() as u32;
 
-    let mut image = Image::new_fill(
-        Extent3d {
-            width: pixmap_width,
-            height: pixmap_height,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &[0, 0, 0, 255],
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::default(),
-    );
+    let mut image = create_terminal_image(pixmap_width, pixmap_height, [0, 0, 0, 255]);
     image.data = Some(terminal.tui.backend().get_pixmap_data_as_rgba());
-    image.sampler = ImageSampler::nearest();
 
     let image_handle = images.add(image);
     terminal.image_handle = Some(image_handle.clone());
+
+    let back_image = create_terminal_image(pixmap_width, pixmap_height, [18, 20, 28, 255]);
+    let back_image_handle = images.add(back_image);
+    terminal.back_image_handle = Some(back_image_handle.clone());
 
     let viewport_size = Vec2::new(WINDOW_WIDTH, WINDOW_HEIGHT);
     let viewport_center = Vec2::ZERO;
@@ -159,7 +152,8 @@ pub fn setup_scene(
         TerminalPlaneBack,
         Mesh3d(meshes.add(Rectangle::new(1.0, 1.0))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb_u8(31, 31, 40),
+            base_color: Color::WHITE,
+            base_color_texture: terminal.back_image_handle.clone(),
             unlit: true,
             ..default()
         })),
@@ -185,6 +179,22 @@ pub fn setup_scene(
     });
     commands.insert_resource(TerminalPlaneView::default());
     commands.insert_resource(ModelLoadState { loaded: false });
+}
+
+fn create_terminal_image(width: u32, height: u32, fill: [u8; 4]) -> Image {
+    let mut image = Image::new_fill(
+        Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        &fill,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::default(),
+    );
+    image.sampler = ImageSampler::nearest();
+    image
 }
 
 pub fn apply_terminal_presentation(
