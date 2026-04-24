@@ -11,7 +11,7 @@ use crate::config::CURSOR_SCALE_FACTOR;
 use crate::model::CursorModel;
 use crate::model::spawn_cursor_model;
 use crate::mouse::TerminalSelection;
-use crate::rendering::{sync_plane_texture, sync_terminal_debug_image, sync_terminal_image};
+use crate::rendering::{sync_plane_texture, sync_terminal_debug_image};
 use crate::runtime::TerminalRuntime;
 use crate::scene::{
     ModelLoadState, TerminalPlane, TerminalPlaneBack, TerminalPresentation,
@@ -52,6 +52,7 @@ pub fn redraw_soft_terminal(
     mut terminal: NonSendMut<TerminalSurface>,
     selection: Res<TerminalSelection>,
     presentation: Res<TerminalPresentation>,
+    time: Res<Time>,
     mut redraw: ResMut<TerminalRedrawState>,
     mut images: ResMut<Assets<Image>>,
     mut model_load_state: ResMut<ModelLoadState>,
@@ -78,7 +79,7 @@ pub fn redraw_soft_terminal(
         );
     });
 
-    sync_terminal_image(&terminal, &mut images);
+    let _ = terminal.sync_image(&mut images, time.elapsed_secs());
     sync_terminal_debug_image(&terminal, &mut images, screen);
 
     sync_plane_texture(
@@ -136,17 +137,13 @@ pub fn handle_window_resize(
     viewport.size = viewport_size;
     viewport.center = Vec2::ZERO;
 
-    let char_dims = UVec2::new(
-        terminal.tui.backend().char_width as u32,
-        terminal.tui.backend().char_height as u32,
-    )
-    .max(UVec2::ONE);
+    let char_dims = terminal.char_dimensions().max(UVec2::ONE);
     let cols = ((viewport_size.x / char_dims.x as f32).floor() as u16).max(1);
     let rows = ((viewport_size.y / char_dims.y as f32).floor() as u16).max(1);
 
     runtime.resize(cols, rows);
     terminal.resize(cols, rows);
-    sync_terminal_image(&terminal, &mut images);
+    let _ = terminal.sync_image(&mut images, 0.0);
     redraw.request();
 
     for mut sprite in &mut sprite_query {

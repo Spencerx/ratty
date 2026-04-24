@@ -7,8 +7,15 @@ edition = "2024"
 anyhow = "1.0"
 arboard = "3.6"
 bevy = { version = "0.18.1", default-features = true }
+parley_ratatui = "0.2.0"
+pollster = "0.4"
 portable-pty = "0.8"
 ratatui = "0.30"
-soft_ratatui = { version = "0.2.2", default-features = false, features = ["parley-vello"] }
 tobj = "4.0"
 vt100 = "0.16"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

@@ -1,6 +1,5 @@
 use bevy::prelude::*;
 use bevy::render::render_resource::Extent3d;
-use ratatui::style::Color as TuiColor;
 
 use crate::terminal::TerminalSurface;
 
@@ -11,38 +10,6 @@ const DEBUG_GRID_OUTLINE: Rgba = [51, 57, 72, 255];
 const DEBUG_CURSOR: Rgba = [126, 156, 216, 255];
 const DEBUG_FG_FALLBACK: Rgba = [220, 215, 186, 255];
 const DEBUG_BG_FALLBACK: Rgba = [31, 31, 40, 255];
-
-pub fn sync_terminal_image(terminal: &TerminalSurface, images: &mut Assets<Image>) {
-    let Some(handle) = terminal.image_handle.as_ref() else {
-        return;
-    };
-    let Some(image) = images.get_mut(handle) else {
-        return;
-    };
-
-    let width = terminal.tui.backend().get_pixmap_width() as u32;
-    let height = terminal.tui.backend().get_pixmap_height() as u32;
-    let rgba_len = width as usize * height as usize * 4;
-
-    image.resize(Extent3d {
-        width,
-        height,
-        depth_or_array_layers: 1,
-    });
-
-    let data = image.data.get_or_insert_with(Vec::new);
-    if data.len() != rgba_len {
-        data.resize(rgba_len, 0);
-    }
-
-    let rgb = terminal.tui.backend().get_pixmap_data();
-    for (dst, src) in data.chunks_exact_mut(4).zip(rgb.chunks_exact(3)) {
-        dst[0] = src[0];
-        dst[1] = src[1];
-        dst[2] = src[2];
-        dst[3] = 255;
-    }
-}
 
 pub fn sync_terminal_debug_image(
     terminal: &TerminalSurface,
@@ -56,8 +23,9 @@ pub fn sync_terminal_debug_image(
         return;
     };
 
-    let width = terminal.tui.backend().get_pixmap_width() as u32;
-    let height = terminal.tui.backend().get_pixmap_height() as u32;
+    let pixmap = terminal.pixmap_dimensions();
+    let width = pixmap.x;
+    let height = pixmap.y;
     let rgba_len = width as usize * height as usize * 4;
 
     image.resize(Extent3d {
@@ -173,7 +141,9 @@ impl<'a> CellDebugImageRenderer<'a> {
     }
 
     fn cell_rect(&self, row: u32, col: u32) -> CellRect {
-        let draw_col = self.cols - 1 - col;
+        let row = row.min(self.rows.saturating_sub(1));
+        let col = col.min(self.cols.saturating_sub(1));
+        let draw_col = self.cols.saturating_sub(1).saturating_sub(col);
         let x0 = draw_col * self.cell_width;
         let y0 = row * self.cell_height;
         let x1 = if draw_col + 1 == self.cols {
@@ -303,63 +273,40 @@ fn blend_rgba(top: Rgba, bottom: Rgba, top_mix: f32) -> Rgba {
 fn vt100_debug_color(color: vt100::Color) -> Option<Rgba> {
     match color {
         vt100::Color::Default => None,
-        vt100::Color::Idx(index) => Some(tui_color_to_rgba(ansi_index_to_tui(index))),
+        vt100::Color::Idx(index) => Some(ansi_index_to_rgba(index)),
         vt100::Color::Rgb(r, g, b) => Some([r, g, b, 255]),
     }
 }
 
-fn tui_color_to_rgba(color: TuiColor) -> Rgba {
-    match color {
-        TuiColor::Black => [0, 0, 0, 255],
-        TuiColor::Red => [128, 0, 0, 255],
-        TuiColor::Green => [0, 128, 0, 255],
-        TuiColor::Yellow => [128, 128, 0, 255],
-        TuiColor::Blue => [0, 0, 128, 255],
-        TuiColor::Magenta => [128, 0, 128, 255],
-        TuiColor::Cyan => [0, 128, 128, 255],
-        TuiColor::Gray => [192, 192, 192, 255],
-        TuiColor::DarkGray => [128, 128, 128, 255],
-        TuiColor::LightRed => [255, 0, 0, 255],
-        TuiColor::LightGreen => [0, 255, 0, 255],
-        TuiColor::LightYellow => [255, 255, 0, 255],
-        TuiColor::LightBlue => [0, 0, 255, 255],
-        TuiColor::LightMagenta => [255, 0, 255, 255],
-        TuiColor::LightCyan => [0, 255, 255, 255],
-        TuiColor::White => [255, 255, 255, 255],
-        TuiColor::Rgb(r, g, b) => [r, g, b, 255],
-        _ => [220, 215, 186, 255],
-    }
-}
-
-fn ansi_index_to_tui(index: u8) -> TuiColor {
+fn ansi_index_to_rgba(index: u8) -> Rgba {
     match index {
-        0 => TuiColor::Black,
-        1 => TuiColor::Red,
-        2 => TuiColor::Green,
-        3 => TuiColor::Yellow,
-        4 => TuiColor::Blue,
-        5 => TuiColor::Magenta,
-        6 => TuiColor::Cyan,
-        7 => TuiColor::Gray,
-        8 => TuiColor::DarkGray,
-        9 => TuiColor::LightRed,
-        10 => TuiColor::LightGreen,
-        11 => TuiColor::LightYellow,
-        12 => TuiColor::LightBlue,
-        13 => TuiColor::LightMagenta,
-        14 => TuiColor::LightCyan,
-        15 => TuiColor::White,
+        0 => [0, 0, 0, 255],
+        1 => [128, 0, 0, 255],
+        2 => [0, 128, 0, 255],
+        3 => [128, 128, 0, 255],
+        4 => [0, 0, 128, 255],
+        5 => [128, 0, 128, 255],
+        6 => [0, 128, 128, 255],
+        7 => [192, 192, 192, 255],
+        8 => [128, 128, 128, 255],
+        9 => [255, 0, 0, 255],
+        10 => [0, 255, 0, 255],
+        11 => [255, 255, 0, 255],
+        12 => [0, 0, 255, 255],
+        13 => [255, 0, 255, 255],
+        14 => [0, 255, 255, 255],
+        15 => [255, 255, 255, 255],
         16..=231 => {
             let index = index - 16;
             let r = index / 36;
             let g = (index % 36) / 6;
             let b = index % 6;
             let component = |value: u8| if value == 0 { 0 } else { 55 + value * 40 };
-            TuiColor::Rgb(component(r), component(g), component(b))
+            [component(r), component(g), component(b), 255]
         }
         232..=255 => {
             let shade = 8 + (index - 232) * 10;
-            TuiColor::Rgb(shade, shade, shade)
+            [shade, shade, shade, 255]
         }
     }
 }

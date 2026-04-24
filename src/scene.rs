@@ -107,11 +107,12 @@ pub fn setup_scene(
         Transform::from_xyz(0.0, 0.0, 800.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
-    let pixmap_width = terminal.tui.backend().get_pixmap_width() as u32;
-    let pixmap_height = terminal.tui.backend().get_pixmap_height() as u32;
+    let pixmap = terminal.pixmap_dimensions();
+    let pixmap_width = pixmap.x;
+    let pixmap_height = pixmap.y;
 
     let mut image = create_terminal_image(pixmap_width, pixmap_height, [0, 0, 0, 255]);
-    image.data = Some(terminal.tui.backend().get_pixmap_data_as_rgba());
+    image.data = Some(vec![0; (pixmap_width * pixmap_height * 4) as usize]);
 
     let image_handle = images.add(image);
     terminal.image_handle = Some(image_handle.clone());

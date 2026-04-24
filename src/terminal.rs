@@ -1,12 +1,19 @@
 use bevy::prelude::*;
-use ratatui::Terminal;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
-use ratatui::style::{Color as TuiColor, Modifier, Style};
-use ratatui::widgets::Widget;
-use soft_ratatui::{ParleyText, SoftBackend};
+use parley_ratatui::ratatui::Terminal;
+use parley_ratatui::ratatui::buffer::Buffer;
+use parley_ratatui::ratatui::layout::Rect;
+use parley_ratatui::ratatui::style::{Color as TuiColor, Modifier, Style};
+use parley_ratatui::ratatui::widgets::Widget;
+use parley_ratatui::vello::wgpu;
+use parley_ratatui::{
+    BundledFont, FontOptions, GpuRenderer, ParleyBackend, TerminalRenderer, TextureReadback,
+    TextureTarget, Theme,
+};
 
-use crate::config::{TERMINAL_FONT_SIZE, THEME_BG, THEME_FG};
+use crate::config::{
+    TERMINAL_FONT_FAMILY_NAME, TERMINAL_FONT_SIZE, TERMINAL_TEXTURE_LABEL, THEME_BG, THEME_BG_RGB,
+    THEME_CURSOR_RGB, THEME_FG, THEME_FG_RGB,
+};
 use crate::mouse::TerminalSelection;
 
 static TERMINAL_FONT_DATA: &[u8] = include_bytes!(concat!(
@@ -36,30 +43,111 @@ impl TerminalRedrawState {
 }
 
 pub struct TerminalSurface {
-    pub tui: Terminal<SoftBackend<ParleyText>>,
+    pub tui: Terminal<ParleyBackend>,
     pub image_handle: Option<Handle<Image>>,
     pub back_image_handle: Option<Handle<Image>>,
     pub cols: u16,
     pub rows: u16,
+    renderer: TerminalRenderer,
+    gpu: OffscreenGpu,
+}
+
+struct OffscreenGpu {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    renderer: GpuRenderer,
+    target: TextureTarget,
+    readback: TextureReadback,
+    rgba: Vec<u8>,
+}
+
+impl OffscreenGpu {
+    async fn new(width: u32, height: u32) -> anyhow::Result<Self> {
+        let instance = wgpu::Instance::default();
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .await
+            .map_err(|_| anyhow::anyhow!("failed to request wgpu adapter for parley_ratatui"))?;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default())
+            .await?;
+        let target = TextureTarget::new(
+            &device,
+            width,
+            height,
+            wgpu::TextureFormat::Rgba8Unorm,
+            Some(TERMINAL_TEXTURE_LABEL),
+        );
+        let renderer = GpuRenderer::new(&device)?;
+        Ok(Self {
+            device,
+            queue,
+            renderer,
+            target,
+            readback: TextureReadback::new(),
+            rgba: Vec::new(),
+        })
+    }
+
+    fn resize(&mut self, width: u32, height: u32) {
+        if self.target.width == width && self.target.height == height {
+            return;
+        }
+
+        self.target = TextureTarget::new(
+            &self.device,
+            width,
+            height,
+            self.target.format,
+            Some(TERMINAL_TEXTURE_LABEL),
+        );
+    }
 }
 
 impl TerminalSurface {
-    pub fn new(cols: u16, rows: u16) -> Self {
-        let backend =
-            SoftBackend::<ParleyText>::new(cols, rows, TERMINAL_FONT_SIZE, TERMINAL_FONT_DATA);
-
-        let mut tui =
-            Terminal::new(backend).expect("soft_ratatui backend is infallible for Terminal::new");
+    pub fn new(cols: u16, rows: u16) -> anyhow::Result<Self> {
+        let backend = ParleyBackend::new(cols, rows);
+        let mut tui = Terminal::new(backend)?;
         let _ = tui.clear();
-        tui.backend_mut().cursor = false;
+        tui.hide_cursor()?;
 
-        Self {
+        let theme = Theme {
+            foreground: parley_ratatui::Rgba::rgb(THEME_FG_RGB.0, THEME_FG_RGB.1, THEME_FG_RGB.2),
+            background: parley_ratatui::Rgba::rgb(THEME_BG_RGB.0, THEME_BG_RGB.1, THEME_BG_RGB.2),
+            cursor: parley_ratatui::Rgba::rgb(
+                THEME_CURSOR_RGB.0,
+                THEME_CURSOR_RGB.1,
+                THEME_CURSOR_RGB.2,
+            ),
+            ..Theme::default()
+        };
+        let font = BundledFont::from_static(TERMINAL_FONT_DATA)
+            .with_family_name(TERMINAL_FONT_FAMILY_NAME);
+        let font_options = FontOptions::default().with_font_stack(
+            parley_ratatui::FontStack::new(font.clone())
+                .with_bold(font.clone())
+                .with_italic(font.clone())
+                .with_bold_italic(font),
+        );
+        let renderer = TerminalRenderer::new(
+            FontOptions {
+                size: TERMINAL_FONT_SIZE as f32,
+                ..font_options
+            },
+            theme,
+        );
+        let (width, height) = renderer.texture_size_for_buffer(tui.backend().buffer());
+        let gpu = pollster::block_on(OffscreenGpu::new(width, height))?;
+
+        Ok(Self {
             tui,
             image_handle: None,
             back_image_handle: None,
             cols,
             rows,
-        }
+            renderer,
+            gpu,
+        })
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -69,9 +157,80 @@ impl TerminalSurface {
 
         self.tui.backend_mut().resize(cols, rows);
         let _ = self.tui.resize(Rect::new(0, 0, cols, rows));
-        self.tui.backend_mut().cursor = false;
+        let _ = self.tui.hide_cursor();
         self.cols = cols;
         self.rows = rows;
+
+        let (width, height) = self
+            .renderer
+            .texture_size_for_buffer(self.tui.backend().buffer());
+        self.gpu.resize(width, height);
+    }
+
+    pub fn char_dimensions(&self) -> UVec2 {
+        let metrics = self.renderer.metrics();
+        UVec2::new(
+            metrics.cell_width.ceil().max(1.0) as u32,
+            metrics.cell_height.ceil().max(1.0) as u32,
+        )
+    }
+
+    pub fn pixmap_dimensions(&self) -> UVec2 {
+        let (width, height) = self
+            .renderer
+            .texture_size_for_buffer(self.tui.backend().buffer());
+        UVec2::new(width, height)
+    }
+
+    pub fn sync_image(
+        &mut self,
+        images: &mut Assets<Image>,
+        elapsed_secs: f32,
+    ) -> anyhow::Result<()> {
+        let Some(handle) = self.image_handle.as_ref() else {
+            return Ok(());
+        };
+        let Some(image) = images.get_mut(handle) else {
+            return Ok(());
+        };
+
+        let (width, height) = self
+            .renderer
+            .texture_size_for_buffer(self.tui.backend().buffer());
+        self.gpu.resize(width, height);
+
+        let buffer = self.tui.backend().buffer();
+        let cursor = Some(self.tui.backend().cursor_position());
+        let cursor_visible = self.tui.backend().cursor_visible();
+
+        self.gpu.renderer.render_to_rgba8_with_elapsed_into(
+            &mut self.renderer,
+            &mut self.gpu.readback,
+            &self.gpu.device,
+            &self.gpu.queue,
+            &self.gpu.target,
+            buffer,
+            cursor,
+            cursor_visible,
+            elapsed_secs,
+            &mut self.gpu.rgba,
+        )?;
+
+        image.resize(bevy::render::render_resource::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        });
+        let data = image.data.get_or_insert_with(Vec::new);
+        let target_len = width as usize * height as usize * 4;
+        if data.len() != target_len {
+            data.resize(target_len, 0);
+        }
+        if self.gpu.rgba.len() == target_len {
+            data.copy_from_slice(&self.gpu.rgba);
+        }
+
+        Ok(())
     }
 }
 

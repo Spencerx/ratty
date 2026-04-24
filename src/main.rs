@@ -19,7 +19,7 @@ use crate::terminal::TerminalSurface;
 
 fn main() -> anyhow::Result<()> {
     let runtime = TerminalRuntime::spawn(DEFAULT_COLS, DEFAULT_ROWS)?;
-    let terminal = TerminalSurface::new(DEFAULT_COLS, DEFAULT_ROWS);
+    let terminal = TerminalSurface::new(DEFAULT_COLS, DEFAULT_ROWS)?;
 
     App::new()
         .insert_resource(ClearColor(Color::srgb_u8(31, 31, 40)))
