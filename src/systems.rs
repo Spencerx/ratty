@@ -8,6 +8,7 @@ use bevy::window::{PrimaryWindow, WindowResized};
 use crate::config::CURSOR_DEPTH;
 use crate::config::CURSOR_PLANE_OFFSET;
 use crate::config::CURSOR_SCALE_FACTOR;
+use crate::config::CURSOR_X_OFFSET_CELLS;
 use crate::model::CursorModel;
 use crate::model::spawn_cursor_model;
 use crate::mouse::TerminalSelection;
@@ -206,7 +207,8 @@ fn cursor_pose(
     let cursor_col = cursor_col.min(terminal.cols.saturating_sub(1)) as f32;
     let cursor_row = cursor_row.min(terminal.rows.saturating_sub(1)) as f32;
 
-    let local_x = viewport.center.x - viewport.size.x * 0.5 + (cursor_col + 0.5) * cell_width;
+    let cursor_x = cursor_col + 0.5 + CURSOR_X_OFFSET_CELLS;
+    let local_x = viewport.center.x - viewport.size.x * 0.5 + cursor_x * cell_width;
     let local_y = viewport.center.y + viewport.size.y * 0.5 - (cursor_row + 0.5) * cell_height;
     let spin = elapsed_secs * 1.4;
     let bob = (elapsed_secs * 2.2).sin() * cell_height * 0.08;
@@ -225,7 +227,7 @@ fn cursor_pose(
             let plane_transform = plane_query
                 .single()
                 .expect("terminal plane should exist while app is running");
-            let plane_local_x = (cursor_col + 0.5) / cols - 0.5;
+            let plane_local_x = cursor_x / cols - 0.5;
             let plane_local_y = 0.5 - (cursor_row + 0.5) / rows;
             let local_position = Vec3::new(plane_local_x, plane_local_y, CURSOR_PLANE_OFFSET);
             (
