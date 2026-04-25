@@ -43,7 +43,7 @@ pub struct TerminalSurface {
     font: FontConfig,
     theme: ThemeConfig,
     renderer: TerminalRenderer,
-    gpu: OffscreenGpu,
+    gpu: Option<OffscreenGpu>,
 }
 
 struct OffscreenGpu {
@@ -111,8 +111,6 @@ impl TerminalSurface {
             tui.show_cursor()?;
         }
         let renderer = build_terminal_renderer(&config.font, &config.theme);
-        let (width, height) = renderer.texture_size_for_buffer(tui.backend().buffer());
-        let gpu = pollster::block_on(OffscreenGpu::new(width, height))?;
 
         Ok(Self {
             tui,
@@ -124,7 +122,7 @@ impl TerminalSurface {
             font: config.font.clone(),
             theme: config.theme.clone(),
             renderer,
-            gpu,
+            gpu: None,
         })
     }
 
@@ -136,10 +134,12 @@ impl TerminalSurface {
 
         self.font.size = new_size;
         self.renderer = build_terminal_renderer(&self.font, &self.theme);
-        let (width, height) = self
-            .renderer
-            .texture_size_for_buffer(self.tui.backend().buffer());
-        self.gpu.resize(width, height);
+        if let Some(gpu) = self.gpu.as_mut() {
+            let (width, height) = self
+                .renderer
+                .texture_size_for_buffer(self.tui.backend().buffer());
+            gpu.resize(width, height);
+        }
         true
     }
 
@@ -158,10 +158,12 @@ impl TerminalSurface {
         self.cols = cols;
         self.rows = rows;
 
-        let (width, height) = self
-            .renderer
-            .texture_size_for_buffer(self.tui.backend().buffer());
-        self.gpu.resize(width, height);
+        if let Some(gpu) = self.gpu.as_mut() {
+            let (width, height) = self
+                .renderer
+                .texture_size_for_buffer(self.tui.backend().buffer());
+            gpu.resize(width, height);
+        }
     }
 
     pub fn char_dimensions(&self) -> UVec2 {
@@ -194,23 +196,27 @@ impl TerminalSurface {
         let (width, height) = self
             .renderer
             .texture_size_for_buffer(self.tui.backend().buffer());
-        self.gpu.resize(width, height);
+        if self.gpu.is_none() {
+            self.gpu = Some(pollster::block_on(OffscreenGpu::new(width, height))?);
+        }
+        let gpu = self.gpu.as_mut().expect("gpu should be initialized");
+        gpu.resize(width, height);
 
         let buffer = self.tui.backend().buffer();
         let cursor = Some(self.tui.backend().cursor_position());
         let cursor_visible = self.tui.backend().cursor_visible();
 
-        self.gpu.renderer.render_to_rgba8_with_elapsed_into(
+        gpu.renderer.render_to_rgba8_with_elapsed_into(
             &mut self.renderer,
-            &mut self.gpu.readback,
-            &self.gpu.device,
-            &self.gpu.queue,
-            &self.gpu.target,
+            &mut gpu.readback,
+            &gpu.device,
+            &gpu.queue,
+            &gpu.target,
             buffer,
             cursor,
             cursor_visible,
             elapsed_secs,
-            &mut self.gpu.rgba,
+            &mut gpu.rgba,
         )?;
 
         image.resize(bevy::render::render_resource::Extent3d {
@@ -223,8 +229,8 @@ impl TerminalSurface {
         if data.len() != target_len {
             data.resize(target_len, 0);
         }
-        if self.gpu.rgba.len() == target_len {
-            data.copy_from_slice(&self.gpu.rgba);
+        if gpu.rgba.len() == target_len {
+            data.copy_from_slice(&gpu.rgba);
         }
 
         Ok(())
