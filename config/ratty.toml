@@ -39,9 +39,11 @@ bob_amplitude = 0.08
 
 [bindings]
 keys = [
-  { key = "Enter", with = "Control | alt", action = "ToggleMode" },
   { key = "C", with = "Control | alt", action = "Copy" },
   { key = "V", with = "Control | alt", action = "Paste" },
   { key = "Equal", with = "Control", action = "IncreaseFontSize" },
   { key = "Minus", with = "Control", action = "DecreaseFontSize" },
+  { key = "Enter", with = "Control | alt", action = "ToggleMode" },
+  { key = "Up", with = "Control | alt", action = "IncreaseWarp" },
+  { key = "Down", with = "Control | alt", action = "DecreaseWarp" },
 ]

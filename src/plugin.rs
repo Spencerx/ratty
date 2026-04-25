@@ -4,7 +4,8 @@ use crate::keyboard::{TerminalClipboard, TerminalKeyBindings, handle_keyboard_in
 use crate::mouse::{TerminalSelection, handle_mouse_input};
 use crate::scene::{apply_terminal_presentation, setup_scene};
 use crate::systems::{
-    handle_window_resize, pump_pty_output, redraw_soft_terminal, sync_asset_to_terminal_cursor,
+    animate_terminal_plane_warp, handle_window_resize, pump_pty_output, redraw_soft_terminal,
+    sync_asset_to_terminal_cursor,
 };
 use crate::terminal::TerminalRedrawState;
 
@@ -33,6 +34,7 @@ impl Plugin for TerminalPlugin {
                     .after(handle_mouse_input)
                     .after(pump_pty_output),
             )
+            .add_systems(Update, animate_terminal_plane_warp)
             .add_systems(
                 Update,
                 sync_asset_to_terminal_cursor.after(redraw_soft_terminal),

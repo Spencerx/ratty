@@ -146,6 +146,10 @@ pub enum BindingAction {
     None,
     #[serde(rename = "ToggleMode")]
     ToggleMode,
+    #[serde(rename = "IncreaseWarp")]
+    IncreaseWarp,
+    #[serde(rename = "DecreaseWarp")]
+    DecreaseWarp,
     #[serde(rename = "Copy")]
     Copy,
     #[serde(rename = "Paste")]

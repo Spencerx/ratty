@@ -8,7 +8,7 @@ use arboard::Clipboard;
 use crate::config::{AppConfig, BindingAction, KeyBindingConfig};
 use crate::mouse::TerminalSelection;
 use crate::runtime::TerminalRuntime;
-use crate::scene::{TerminalPresentation, TerminalViewport};
+use crate::scene::{TerminalPlaneWarp, TerminalPresentation, TerminalViewport};
 use crate::terminal::{TerminalRedrawState, TerminalSurface};
 
 pub struct TerminalClipboard {
@@ -58,6 +58,24 @@ impl FromWorld for TerminalKeyBindings {
                     ..default()
                 },
                 BindingAction::ToggleMode,
+            ),
+            KeyBinding::new(
+                KeyCode::ArrowUp,
+                BindingModifiers {
+                    control: true,
+                    alt: true,
+                    ..default()
+                },
+                BindingAction::IncreaseWarp,
+            ),
+            KeyBinding::new(
+                KeyCode::ArrowDown,
+                BindingModifiers {
+                    control: true,
+                    alt: true,
+                    ..default()
+                },
+                BindingAction::DecreaseWarp,
             ),
             KeyBinding::new(
                 KeyCode::KeyC,
@@ -197,6 +215,7 @@ pub fn handle_keyboard_input(
     mut keyboard_events: MessageReader<KeyboardInput>,
     mut keyboard: Local<TerminalKeyboard>,
     mut selection: ResMut<TerminalSelection>,
+    mut plane_warp: ResMut<TerminalPlaneWarp>,
     mut presentation: ResMut<TerminalPresentation>,
     mut clipboard: NonSendMut<TerminalClipboard>,
     mut runtime: NonSendMut<TerminalRuntime>,
@@ -212,7 +231,10 @@ pub fn handle_keyboard_input(
             if event.repeat
                 && !matches!(
                     action,
-                    BindingAction::IncreaseFontSize | BindingAction::DecreaseFontSize
+                    BindingAction::IncreaseFontSize
+                        | BindingAction::DecreaseFontSize
+                        | BindingAction::IncreaseWarp
+                        | BindingAction::DecreaseWarp
                 )
             {
                 continue;
@@ -223,6 +245,16 @@ pub fn handle_keyboard_input(
                 BindingAction::ToggleMode => {
                     presentation.toggle();
                     selection.clear();
+                    redraw.request();
+                    continue;
+                }
+                BindingAction::IncreaseWarp | BindingAction::DecreaseWarp => {
+                    let delta = if action == BindingAction::IncreaseWarp {
+                        0.08
+                    } else {
+                        -0.08
+                    };
+                    plane_warp.adjust(delta);
                     redraw.request();
                     continue;
                 }

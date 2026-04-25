@@ -1,6 +1,7 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ClearColorConfig;
 use bevy::image::ImageSampler;
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
@@ -18,6 +19,23 @@ pub struct TerminalPlaneBack;
 
 #[derive(Component)]
 pub struct TerminalPlaneCamera;
+
+#[derive(Resource)]
+pub struct TerminalPlaneMeshes {
+    pub front: Handle<Mesh>,
+    pub back: Handle<Mesh>,
+}
+
+#[derive(Resource, Default)]
+pub struct TerminalPlaneWarp {
+    pub amount: f32,
+}
+
+impl TerminalPlaneWarp {
+    pub fn adjust(&mut self, delta: f32) {
+        self.amount = (self.amount + delta).clamp(0.0, 1.0);
+    }
+}
 
 #[derive(Resource, Clone, Copy)]
 pub struct TerminalViewport {
@@ -148,9 +166,17 @@ pub fn setup_scene(
         Transform::from_translation(Vec3::new(viewport_center.x, viewport_center.y, 0.0)),
     ));
 
+    let front_mesh = meshes.add(terminal_plane_mesh(32, 20));
+    let back_mesh = meshes.add(terminal_plane_mesh(32, 20));
+    commands.insert_resource(TerminalPlaneMeshes {
+        front: front_mesh.clone(),
+        back: back_mesh.clone(),
+    });
+    commands.insert_resource(TerminalPlaneWarp::default());
+
     commands.spawn((
         TerminalPlane,
-        Mesh3d(meshes.add(Rectangle::new(1.0, 1.0))),
+        Mesh3d(front_mesh),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::WHITE,
             base_color_texture: terminal.image_handle.clone(),
@@ -163,7 +189,7 @@ pub fn setup_scene(
 
     commands.spawn((
         TerminalPlaneBack,
-        Mesh3d(meshes.add(Rectangle::new(1.0, 1.0))),
+        Mesh3d(back_mesh),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::WHITE,
             base_color_texture: terminal.back_image_handle.clone(),
@@ -284,4 +310,45 @@ pub fn apply_terminal_presentation(
         transform.translation = Vec3::new(0.0, 0.0, 800.0) + offset;
         transform.look_at(offset, Vec3::Y);
     }
+}
+
+fn terminal_plane_mesh(x_segments: u32, y_segments: u32) -> Mesh {
+    let x_segments = x_segments.max(2);
+    let y_segments = y_segments.max(2);
+    let vertex_count = ((x_segments + 1) * (y_segments + 1)) as usize;
+
+    let mut positions = Vec::with_capacity(vertex_count);
+    let mut normals = Vec::with_capacity(vertex_count);
+    let mut uvs = Vec::with_capacity(vertex_count);
+    let mut indices = Vec::with_capacity((x_segments * y_segments * 6) as usize);
+
+    for y in 0..=y_segments {
+        let v = y as f32 / y_segments as f32;
+        let py = 0.5 - v;
+        for x in 0..=x_segments {
+            let u = x as f32 / x_segments as f32;
+            let px = u - 0.5;
+            positions.push([px, py, 0.0]);
+            normals.push([0.0, 0.0, 1.0]);
+            uvs.push([u, v]);
+        }
+    }
+
+    for y in 0..y_segments {
+        for x in 0..x_segments {
+            let row = y * (x_segments + 1);
+            let next_row = (y + 1) * (x_segments + 1);
+            let i0 = row + x;
+            let i1 = i0 + 1;
+            let i2 = next_row + x;
+            let i3 = i2 + 1;
+            indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
+        }
+    }
+
+    Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::default())
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+        .with_inserted_indices(Indices::U32(indices))
 }

@@ -2,6 +2,7 @@ use std::sync::mpsc::TryRecvError;
 
 use bevy::app::AppExit;
 use bevy::ecs::message::{MessageReader, MessageWriter};
+use bevy::mesh::VertexAttributeValues;
 use bevy::prelude::*;
 use ratatui::style::Color as TuiColor;
 use bevy::window::{PrimaryWindow, WindowResized};
@@ -13,8 +14,8 @@ use crate::mouse::TerminalSelection;
 use crate::rendering::{sync_plane_texture, sync_terminal_debug_image};
 use crate::runtime::TerminalRuntime;
 use crate::scene::{
-    ModelLoadState, TerminalPlane, TerminalPlaneBack, TerminalPresentation,
-    TerminalPresentationMode, TerminalSprite, TerminalViewport,
+    ModelLoadState, TerminalPlane, TerminalPlaneBack, TerminalPlaneMeshes, TerminalPlaneWarp,
+    TerminalPresentation, TerminalPresentationMode, TerminalSprite, TerminalViewport,
 };
 use crate::terminal::{TerminalRedrawState, TerminalSurface, TerminalWidget};
 
@@ -276,4 +277,44 @@ fn cursor_pose(
     };
 
     (translation, rotation, scale, visibility)
+}
+
+pub fn animate_terminal_plane_warp(
+    time: Res<Time>,
+    warp: Res<TerminalPlaneWarp>,
+    plane_meshes: Res<TerminalPlaneMeshes>,
+    mut meshes: ResMut<Assets<Mesh>>,
+) {
+    if !warp.is_changed() && warp.amount == 0.0 {
+        return;
+    }
+
+    let pulse = warp.amount * (0.96 + 0.04 * (time.elapsed_secs() * 2.2).sin());
+    apply_plane_warp(meshes.get_mut(&plane_meshes.front), pulse, -1.0);
+    apply_plane_warp(meshes.get_mut(&plane_meshes.back), pulse, 1.0);
+}
+
+fn apply_plane_warp(mesh: Option<&mut Mesh>, pulse: f32, direction: f32) {
+    let Some(mesh) = mesh else {
+        return;
+    };
+    let Some(VertexAttributeValues::Float32x3(positions)) =
+        mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
+    else {
+        return;
+    };
+
+    for position in positions.iter_mut() {
+        let x = position[0];
+        let y = position[1];
+        let radius = (x * x + y * y).sqrt();
+        let displacement = if pulse > 0.0 {
+            let core = (-radius * 9.0).exp();
+            let ring = (-(radius - 0.22).powi(2) * 18.0).exp();
+            (core * 360.0 + ring * 72.0) * pulse
+        } else {
+            0.0
+        };
+        position[2] = displacement * direction;
+    }
 }
