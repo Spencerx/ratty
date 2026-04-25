@@ -111,6 +111,12 @@ pub fn redraw_soft_terminal(
         &mut materials,
     );
 
+    if !model_load_state.first_frame_uploaded {
+        model_load_state.first_frame_uploaded = true;
+        redraw.request();
+        return;
+    }
+
     if !model_load_state.loaded {
         spawn_cursor_model(&mut commands, &mut meshes, &mut materials, &app_config);
         model_load_state.loaded = true;

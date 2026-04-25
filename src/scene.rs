@@ -75,6 +75,7 @@ impl Default for TerminalPlaneView {
 #[derive(Resource)]
 pub struct ModelLoadState {
     pub loaded: bool,
+    pub first_frame_uploaded: bool,
 }
 
 pub fn setup_scene(
@@ -190,7 +191,10 @@ pub fn setup_scene(
         mode: TerminalPresentationMode::Flat2d,
     });
     commands.insert_resource(TerminalPlaneView::default());
-    commands.insert_resource(ModelLoadState { loaded: false });
+    commands.insert_resource(ModelLoadState {
+        loaded: false,
+        first_frame_uploaded: false,
+    });
 }
 
 fn create_terminal_image(width: u32, height: u32, fill: [u8; 4]) -> Image {
