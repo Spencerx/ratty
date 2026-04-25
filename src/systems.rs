@@ -3,12 +3,10 @@ use std::sync::mpsc::TryRecvError;
 use bevy::app::AppExit;
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
+use ratatui::style::Color as TuiColor;
 use bevy::window::{PrimaryWindow, WindowResized};
 
-use crate::config::CURSOR_DEPTH;
-use crate::config::CURSOR_PLANE_OFFSET;
-use crate::config::CURSOR_SCALE_FACTOR;
-use crate::config::CURSOR_X_OFFSET_CELLS;
+use crate::config::{AppConfig, CURSOR_DEPTH};
 use crate::model::CursorModel;
 use crate::model::spawn_cursor_model;
 use crate::mouse::TerminalSelection;
@@ -49,6 +47,7 @@ pub fn pump_pty_output(
 }
 
 pub fn redraw_soft_terminal(
+    app_config: Res<AppConfig>,
     runtime: NonSend<TerminalRuntime>,
     mut terminal: NonSendMut<TerminalSurface>,
     selection: Res<TerminalSelection>,
@@ -70,14 +69,31 @@ pub fn redraw_soft_terminal(
     }
 
     let screen = runtime.parser.screen();
+    let theme_fg = TuiColor::Rgb(
+        app_config.theme.foreground[0],
+        app_config.theme.foreground[1],
+        app_config.theme.foreground[2],
+    );
+    let theme_bg = TuiColor::Rgb(
+        app_config.theme.background[0],
+        app_config.theme.background[1],
+        app_config.theme.background[2],
+    );
     let _ = terminal.tui.draw(|frame| {
         frame.render_widget(
             TerminalWidget {
                 screen,
                 selection: &selection,
+                theme_fg,
+                theme_bg,
             },
             frame.area(),
         );
+
+        if !app_config.cursor.model.visible && !screen.hide_cursor() {
+            let (cursor_row, cursor_col) = screen.cursor_position();
+            frame.set_cursor_position((cursor_col, cursor_row));
+        }
     });
 
     let _ = terminal.sync_image(&mut images, time.elapsed_secs());
@@ -95,7 +111,7 @@ pub fn redraw_soft_terminal(
     );
 
     if !model_load_state.loaded {
-        spawn_cursor_model(&mut commands, &mut meshes, &mut materials);
+        spawn_cursor_model(&mut commands, &mut meshes, &mut materials, &app_config);
         model_load_state.loaded = true;
     }
 }
@@ -161,6 +177,7 @@ pub fn handle_window_resize(
 }
 
 pub fn sync_asset_to_terminal_cursor(
+    app_config: Res<AppConfig>,
     runtime: NonSend<TerminalRuntime>,
     terminal: NonSend<TerminalSurface>,
     viewport: Res<TerminalViewport>,
@@ -173,6 +190,7 @@ pub fn sync_asset_to_terminal_cursor(
     >,
 ) {
     let (translation, rotation, scale, cursor_visibility) = cursor_pose(
+        &app_config,
         &runtime,
         &terminal,
         &viewport,
@@ -189,6 +207,7 @@ pub fn sync_asset_to_terminal_cursor(
 }
 
 fn cursor_pose(
+    app_config: &AppConfig,
     runtime: &TerminalRuntime,
     terminal: &TerminalSurface,
     viewport: &TerminalViewport,
@@ -200,24 +219,26 @@ fn cursor_pose(
     let rows = terminal.rows.max(1) as f32;
     let cell_width = viewport.size.x / cols;
     let cell_height = viewport.size.y / rows;
-    let scale = cell_width.min(cell_height) * CURSOR_SCALE_FACTOR;
+    let scale = cell_width.min(cell_height) * app_config.cursor.model.scale_factor;
 
     let screen = runtime.parser.screen();
     let (cursor_row, cursor_col) = screen.cursor_position();
     let cursor_col = cursor_col.min(terminal.cols.saturating_sub(1)) as f32;
     let cursor_row = cursor_row.min(terminal.rows.saturating_sub(1)) as f32;
 
-    let cursor_x = cursor_col + 0.5 + CURSOR_X_OFFSET_CELLS;
+    let cursor_x = cursor_col + 0.5 + app_config.cursor.model.x_offset;
     let local_x = viewport.center.x - viewport.size.x * 0.5 + cursor_x * cell_width;
     let local_y = viewport.center.y + viewport.size.y * 0.5 - (cursor_row + 0.5) * cell_height;
-    let spin = elapsed_secs * 1.4;
-    let bob = (elapsed_secs * 2.2).sin() * cell_height * 0.08;
+    let spin = elapsed_secs * app_config.cursor.animation.spin_speed;
+    let bob = (elapsed_secs * app_config.cursor.animation.bob_speed).sin()
+        * cell_height
+        * app_config.cursor.animation.bob_amplitude;
 
     let (translation, rotation, visibility) = match mode {
         TerminalPresentationMode::Flat2d => (
             Vec3::new(local_x, local_y + bob, CURSOR_DEPTH),
             Quat::from_rotation_y(spin) * Quat::from_rotation_x(-0.25),
-            if screen.hide_cursor() {
+            if !app_config.cursor.model.visible || screen.hide_cursor() {
                 Visibility::Hidden
             } else {
                 Visibility::Visible
@@ -229,12 +250,20 @@ fn cursor_pose(
                 .expect("terminal plane should exist while app is running");
             let plane_local_x = cursor_x / cols - 0.5;
             let plane_local_y = 0.5 - (cursor_row + 0.5) / rows;
-            let local_position = Vec3::new(plane_local_x, plane_local_y, CURSOR_PLANE_OFFSET);
+            let local_position = Vec3::new(
+                plane_local_x,
+                plane_local_y,
+                app_config.cursor.model.plane_offset,
+            );
             (
                 plane_transform.transform_point(local_position),
                 plane_transform.rotation
                     * (Quat::from_rotation_y(spin) * Quat::from_rotation_x(-0.25)),
-                Visibility::Visible,
+                if app_config.cursor.model.visible {
+                    Visibility::Visible
+                } else {
+                    Visibility::Hidden
+                },
             )
         }
     };

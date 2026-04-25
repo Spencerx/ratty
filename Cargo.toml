@@ -7,11 +7,14 @@ edition = "2024"
 anyhow = "1.0"
 arboard = "3.6"
 bevy = { version = "0.18.1", default-features = true }
+etcetera = "0.11"
 parley_ratatui = "0.2.0"
 pollster = "0.4"
 portable-pty = "0.8"
 ratatui = "0.30"
+serde = { version = "1.0", features = ["derive"] }
 tobj = "4.0"
+toml = "0.8"
 vt100 = "0.16"
 
 [profile.dev]

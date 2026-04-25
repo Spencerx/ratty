@@ -1,3 +1,6 @@
+use std::fs;
+
+use anyhow::Context;
 use bevy::prelude::*;
 use parley_ratatui::ratatui::Terminal;
 use parley_ratatui::ratatui::buffer::Buffer;
@@ -7,19 +10,11 @@ use parley_ratatui::ratatui::widgets::Widget;
 use parley_ratatui::vello::wgpu;
 use parley_ratatui::{
     BundledFont, FontOptions, GpuRenderer, ParleyBackend, TerminalRenderer, TextureReadback,
-    TextureTarget, Theme,
+    TextureTarget,
 };
 
-use crate::config::{
-    TERMINAL_FONT_FAMILY_NAME, TERMINAL_FONT_SIZE, TERMINAL_TEXTURE_LABEL, THEME_BG,
-    THEME_BG_RGB, THEME_CURSOR_RGB, THEME_FG, THEME_FG_RGB,
-};
+use crate::config::{AppConfig, TERMINAL_TEXTURE_LABEL, ThemeConfig};
 use crate::mouse::TerminalSelection;
-
-static TERMINAL_FONT_DATA: &[u8] = include_bytes!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/assets/fonts/JetBrainsMonoNerdFontCompleteMono.ttf"
-));
 
 #[derive(Resource)]
 pub struct TerminalRedrawState {
@@ -48,7 +43,10 @@ pub struct TerminalSurface {
     pub back_image_handle: Option<Handle<Image>>,
     pub cols: u16,
     pub rows: u16,
+    cursor_model_visible: bool,
     font_size: i32,
+    font_data: Vec<u8>,
+    theme: ThemeConfig,
     renderer: TerminalRenderer,
     gpu: OffscreenGpu,
 }
@@ -106,12 +104,24 @@ impl OffscreenGpu {
 }
 
 impl TerminalSurface {
-    pub fn new(cols: u16, rows: u16) -> anyhow::Result<Self> {
+    pub fn new(config: &AppConfig) -> anyhow::Result<Self> {
+        let cols = config.terminal.default_cols;
+        let rows = config.terminal.default_rows;
+        let font_data = fs::read(&config.font.path)
+            .with_context(|| format!("failed to read font {}", config.font.path.display()))?;
         let backend = ParleyBackend::new(cols, rows);
         let mut tui = Terminal::new(backend)?;
         let _ = tui.clear();
-        tui.hide_cursor()?;
-        let renderer = build_terminal_renderer(TERMINAL_FONT_SIZE);
+        if config.cursor.model.visible {
+            tui.hide_cursor()?;
+        } else {
+            tui.show_cursor()?;
+        }
+        let renderer = build_terminal_renderer(
+            &font_data,
+            config.font.size,
+            &config.theme,
+        );
         let (width, height) = renderer.texture_size_for_buffer(tui.backend().buffer());
         let gpu = pollster::block_on(OffscreenGpu::new(width, height))?;
 
@@ -121,7 +131,10 @@ impl TerminalSurface {
             back_image_handle: None,
             cols,
             rows,
-            font_size: TERMINAL_FONT_SIZE,
+            cursor_model_visible: config.cursor.model.visible,
+            font_size: config.font.size,
+            font_data,
+            theme: config.theme.clone(),
             renderer,
             gpu,
         })
@@ -134,7 +147,7 @@ impl TerminalSurface {
         }
 
         self.font_size = new_size;
-        self.renderer = build_terminal_renderer(self.font_size);
+        self.renderer = build_terminal_renderer(&self.font_data, self.font_size, &self.theme);
         let (width, height) = self
             .renderer
             .texture_size_for_buffer(self.tui.backend().buffer());
@@ -149,7 +162,11 @@ impl TerminalSurface {
 
         self.tui.backend_mut().resize(cols, rows);
         let _ = self.tui.resize(Rect::new(0, 0, cols, rows));
-        let _ = self.tui.hide_cursor();
+        if self.cursor_model_visible {
+            let _ = self.tui.hide_cursor();
+        } else {
+            let _ = self.tui.show_cursor();
+        }
         self.cols = cols;
         self.rows = rows;
 
@@ -226,18 +243,26 @@ impl TerminalSurface {
     }
 }
 
-fn build_terminal_renderer(font_size: i32) -> TerminalRenderer {
-    let theme = Theme {
-        foreground: parley_ratatui::Rgba::rgb(THEME_FG_RGB.0, THEME_FG_RGB.1, THEME_FG_RGB.2),
-        background: parley_ratatui::Rgba::rgb(THEME_BG_RGB.0, THEME_BG_RGB.1, THEME_BG_RGB.2),
-        cursor: parley_ratatui::Rgba::rgb(
-            THEME_CURSOR_RGB.0,
-            THEME_CURSOR_RGB.1,
-            THEME_CURSOR_RGB.2,
+fn build_terminal_renderer(font_data: &[u8], font_size: i32, theme_config: &ThemeConfig) -> TerminalRenderer {
+    let theme = parley_ratatui::Theme {
+        foreground: parley_ratatui::Rgba::rgb(
+            theme_config.foreground[0],
+            theme_config.foreground[1],
+            theme_config.foreground[2],
         ),
-        ..Theme::default()
+        background: parley_ratatui::Rgba::rgb(
+            theme_config.background[0],
+            theme_config.background[1],
+            theme_config.background[2],
+        ),
+        cursor: parley_ratatui::Rgba::rgb(
+            theme_config.cursor[0],
+            theme_config.cursor[1],
+            theme_config.cursor[2],
+        ),
+        ..parley_ratatui::Theme::default()
     };
-    let font = BundledFont::from_static(TERMINAL_FONT_DATA).with_family_name(TERMINAL_FONT_FAMILY_NAME);
+    let font = BundledFont::from_vec(font_data.to_vec());
     let font_options = FontOptions::default().with_font_stack(
         parley_ratatui::FontStack::new(font.clone())
             .with_bold(font.clone())
@@ -256,11 +281,13 @@ fn build_terminal_renderer(font_size: i32) -> TerminalRenderer {
 pub struct TerminalWidget<'a> {
     pub screen: &'a vt100::Screen,
     pub selection: &'a TerminalSelection,
+    pub theme_fg: TuiColor,
+    pub theme_bg: TuiColor,
 }
 
 impl Widget for TerminalWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        buf.set_style(area, Style::default().fg(THEME_FG).bg(THEME_BG));
+        buf.set_style(area, Style::default().fg(self.theme_fg).bg(self.theme_bg));
 
         let selection = self.selection.normalized_bounds();
         let (rows, cols) = self.screen.size();
@@ -276,7 +303,7 @@ impl Widget for TerminalWidget<'_> {
                     continue;
                 }
 
-                let mut style = vt100_cell_style(vt_cell);
+                let mut style = vt100_cell_style(vt_cell, self.theme_fg, self.theme_bg);
                 let symbol = if vt_cell.has_contents() {
                     vt_cell.contents()
                 } else {
@@ -295,10 +322,10 @@ impl Widget for TerminalWidget<'_> {
     }
 }
 
-fn vt100_cell_style(cell: &vt100::Cell) -> Style {
+fn vt100_cell_style(cell: &vt100::Cell, theme_fg: TuiColor, theme_bg: TuiColor) -> Style {
     let mut style = Style::default()
-        .fg(vt100_color_to_tui(cell.fgcolor()).unwrap_or(THEME_FG))
-        .bg(vt100_color_to_tui(cell.bgcolor()).unwrap_or(THEME_BG));
+        .fg(vt100_color_to_tui(cell.fgcolor()).unwrap_or(theme_fg))
+        .bg(vt100_color_to_tui(cell.bgcolor()).unwrap_or(theme_bg));
 
     let mut modifiers = Modifier::empty();
     if cell.bold() {

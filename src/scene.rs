@@ -4,7 +4,7 @@ use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-use crate::config::{WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::config::AppConfig;
 use crate::terminal::TerminalSurface;
 
 #[derive(Component)]
@@ -79,6 +79,7 @@ pub struct ModelLoadState {
 
 pub fn setup_scene(
     mut commands: Commands,
+    app_config: Res<AppConfig>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
@@ -117,11 +118,21 @@ pub fn setup_scene(
     let image_handle = images.add(image);
     terminal.image_handle = Some(image_handle.clone());
 
-    let back_image = create_terminal_image(pixmap_width, pixmap_height, [18, 20, 28, 255]);
+    let [r, g, b] = app_config.theme.background;
+    let back_image = create_terminal_image(
+        pixmap_width,
+        pixmap_height,
+        [
+            r.saturating_sub(13),
+            g.saturating_sub(11),
+            b.saturating_sub(3),
+            255,
+        ],
+    );
     let back_image_handle = images.add(back_image);
     terminal.back_image_handle = Some(back_image_handle.clone());
 
-    let viewport_size = Vec2::new(WINDOW_WIDTH, WINDOW_HEIGHT);
+    let viewport_size = Vec2::new(app_config.window.width as f32, app_config.window.height as f32);
     let viewport_center = Vec2::ZERO;
     commands.insert_resource(TerminalViewport {
         size: viewport_size,

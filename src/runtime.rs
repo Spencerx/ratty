@@ -8,7 +8,7 @@ use anyhow::Context;
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use vt100::Parser;
 
-use crate::config::TERMINAL_SCROLLBACK;
+use crate::config::AppConfig;
 
 pub struct TerminalRuntime {
     pub rx: Receiver<Vec<u8>>,
@@ -20,7 +20,9 @@ pub struct TerminalRuntime {
 }
 
 impl TerminalRuntime {
-    pub fn spawn(cols: u16, rows: u16) -> anyhow::Result<Self> {
+    pub fn spawn(config: &AppConfig) -> anyhow::Result<Self> {
+        let cols = config.terminal.default_cols;
+        let rows = config.terminal.default_rows;
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -31,9 +33,21 @@ impl TerminalRuntime {
             })
             .context("failed to create PTY pair")?;
 
-        let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+        let shell = config
+            .shell
+            .program
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .or_else(|| env::var("SHELL").ok())
+            .unwrap_or_else(|| "/bin/bash".to_string());
         let mut cmd = CommandBuilder::new(shell);
-        cmd.env("TERM", "xterm-256color");
+        cmd.args(&config.shell.args);
+        if !config.env.contains_key("TERM") {
+            cmd.env("TERM", "xterm-256color");
+        }
+        for (key, value) in &config.env {
+            cmd.env(key, value);
+        }
 
         let child = pair
             .slave
@@ -72,7 +86,7 @@ impl TerminalRuntime {
             writer: Arc::new(Mutex::new(writer)),
             _master: pair.master,
             _child: child,
-            parser: Parser::new(rows, cols, TERMINAL_SCROLLBACK),
+            parser: Parser::new(rows, cols, config.terminal.scrollback),
             pty_disconnected: false,
         })
     }

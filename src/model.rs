@@ -6,7 +6,7 @@ use bevy::asset::RenderAssetUsages;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 
-use crate::config::CURSOR_DEPTH;
+use crate::config::{AppConfig, CURSOR_DEPTH};
 
 #[derive(Component)]
 pub struct CursorModel;
@@ -15,6 +15,7 @@ pub fn spawn_cursor_model(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    app_config: &AppConfig,
 ) {
     let root = commands
         .spawn((
@@ -33,7 +34,7 @@ pub fn spawn_cursor_model(
         ..default()
     });
 
-    let maybe_obj_path = discover_obj_model_path();
+    let maybe_obj_path = discover_obj_model_path(Some(app_config.cursor.model.path.as_path()));
     let maybe_meshes = maybe_obj_path
         .as_ref()
         .map(|path| load_obj_meshes(path).map(|loaded| (path, loaded)));
@@ -76,7 +77,11 @@ pub fn spawn_cursor_model(
     }
 }
 
-fn discover_obj_model_path() -> Option<PathBuf> {
+fn discover_obj_model_path(configured_path: Option<&Path>) -> Option<PathBuf> {
+    if let Some(path) = configured_path {
+        return Some(path.to_path_buf());
+    }
+
     let entries = fs::read_dir("assets/model").ok()?;
     let mut candidates = Vec::new();
 

@@ -12,25 +12,31 @@ mod terminal;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 
-use crate::config::{DEFAULT_COLS, DEFAULT_ROWS, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::config::AppConfig;
 use crate::plugin::TerminalPlugin;
 use crate::runtime::TerminalRuntime;
 use crate::terminal::TerminalSurface;
 
 fn main() -> anyhow::Result<()> {
-    let runtime = TerminalRuntime::spawn(DEFAULT_COLS, DEFAULT_ROWS)?;
-    let terminal = TerminalSurface::new(DEFAULT_COLS, DEFAULT_ROWS)?;
+    let app_config = AppConfig::load()?;
+    let runtime = TerminalRuntime::spawn(&app_config)?;
+    let terminal = TerminalSurface::new(&app_config)?;
 
     App::new()
-        .insert_resource(ClearColor(Color::srgb_u8(31, 31, 40)))
+        .insert_resource(ClearColor(Color::srgb_u8(
+            app_config.theme.background[0],
+            app_config.theme.background[1],
+            app_config.theme.background[2],
+        )))
+        .insert_resource(app_config.clone())
         .insert_non_send_resource(runtime)
         .insert_non_send_resource(terminal)
         .add_plugins(
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
                     title: env!("CARGO_PKG_NAME").into(),
-                    resolution: WindowResolution::new(WINDOW_WIDTH as u32, WINDOW_HEIGHT as u32)
-                        .with_scale_factor_override(1.0),
+                    resolution: WindowResolution::new(app_config.window.width, app_config.window.height)
+                    .with_scale_factor_override(app_config.window.scale_factor),
                     ..default()
                 }),
                 ..default()

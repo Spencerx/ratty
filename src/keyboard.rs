@@ -5,6 +5,7 @@ use bevy::prelude::*;
 
 use arboard::Clipboard;
 
+use crate::config::{AppConfig, BindingAction, KeyBindingConfig};
 use crate::mouse::TerminalSelection;
 use crate::runtime::TerminalRuntime;
 use crate::scene::{TerminalPresentation, TerminalViewport};
@@ -40,10 +41,103 @@ impl TerminalClipboard {
     }
 }
 
+#[derive(Resource)]
+pub struct TerminalKeyBindings {
+    bindings: Vec<KeyBinding>,
+}
+
+impl FromWorld for TerminalKeyBindings {
+    fn from_world(world: &mut World) -> Self {
+        let app_config = world.resource::<AppConfig>();
+        let mut bindings = vec![
+            KeyBinding::new(KeyCode::F2, BindingModifiers::default(), BindingAction::ToggleMode),
+            KeyBinding::new(
+                KeyCode::KeyC,
+                BindingModifiers {
+                    control: true,
+                    alt: true,
+                    ..default()
+                },
+                BindingAction::Copy,
+            ),
+            KeyBinding::new(
+                KeyCode::KeyV,
+                BindingModifiers {
+                    control: true,
+                    alt: true,
+                    ..default()
+                },
+                BindingAction::Paste,
+            ),
+            KeyBinding::new(
+                KeyCode::Equal,
+                BindingModifiers {
+                    control: true,
+                    ..default()
+                },
+                BindingAction::IncreaseFontSize,
+            ),
+            KeyBinding::new(
+                KeyCode::NumpadAdd,
+                BindingModifiers {
+                    control: true,
+                    ..default()
+                },
+                BindingAction::IncreaseFontSize,
+            ),
+            KeyBinding::new(
+                KeyCode::Minus,
+                BindingModifiers {
+                    control: true,
+                    ..default()
+                },
+                BindingAction::DecreaseFontSize,
+            ),
+            KeyBinding::new(
+                KeyCode::NumpadSubtract,
+                BindingModifiers {
+                    control: true,
+                    ..default()
+                },
+                BindingAction::DecreaseFontSize,
+            ),
+        ];
+
+        for binding in &app_config.bindings.keys {
+            let Some(binding) = KeyBinding::from_config(binding) else {
+                warn!("ignoring invalid key binding: key={} with={}", binding.key, binding.with);
+                continue;
+            };
+
+            if let Some(index) = bindings.iter().position(|existing| existing.same_trigger(&binding)) {
+                bindings.remove(index);
+            }
+
+            if binding.action != BindingAction::None {
+                bindings.push(binding);
+            }
+        }
+
+        Self { bindings }
+    }
+}
+
+impl TerminalKeyBindings {
+    fn action_for(&self, key_code: KeyCode, modifiers: BindingModifiers) -> Option<BindingAction> {
+        self.bindings
+            .iter()
+            .filter(|binding| binding.key_code == key_code && binding.modifiers.matches(modifiers))
+            .max_by_key(|binding| binding.modifiers.count())
+            .map(|binding| binding.action)
+    }
+}
+
 #[derive(Default)]
 pub struct TerminalKeyboard {
     pub(crate) ctrl_pressed: bool,
     pub(crate) alt_pressed: bool,
+    pub(crate) shift_pressed: bool,
+    pub(crate) super_pressed: bool,
 }
 
 impl TerminalKeyboard {
@@ -55,6 +149,14 @@ impl TerminalKeyboard {
             }
             KeyCode::AltLeft | KeyCode::AltRight => {
                 self.alt_pressed = event.state == ButtonState::Pressed;
+                return None;
+            }
+            KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                self.shift_pressed = event.state == ButtonState::Pressed;
+                return None;
+            }
+            KeyCode::SuperLeft | KeyCode::SuperRight => {
+                self.super_pressed = event.state == ButtonState::Pressed;
                 return None;
             }
             _ => {}
@@ -72,6 +174,15 @@ impl TerminalKeyboard {
             self.alt_pressed,
         ))
     }
+
+    fn modifiers(&self) -> BindingModifiers {
+        BindingModifiers {
+            control: self.ctrl_pressed,
+            alt: self.alt_pressed,
+            shift: self.shift_pressed,
+            super_key: self.super_pressed,
+        }
+    }
 }
 
 pub fn handle_keyboard_input(
@@ -83,20 +194,62 @@ pub fn handle_keyboard_input(
     mut runtime: NonSendMut<TerminalRuntime>,
     mut terminal: NonSendMut<TerminalSurface>,
     viewport: Res<TerminalViewport>,
+    bindings: Res<TerminalKeyBindings>,
     mut redraw: ResMut<TerminalRedrawState>,
 ) {
     for event in keyboard_events.read() {
-        if event.state == ButtonState::Pressed {
-            if keyboard.ctrl_pressed {
-                let delta = match event.key_code {
-                    KeyCode::NumpadAdd => Some(1),
-                    KeyCode::NumpadSubtract => Some(-1),
-                    KeyCode::Minus => Some(-1),
-                    KeyCode::Equal => Some(1),
-                    _ => None,
-                };
+        if event.state == ButtonState::Pressed
+            && let Some(action) = bindings.action_for(event.key_code, keyboard.modifiers())
+        {
+            if event.repeat
+                && !matches!(
+                    action,
+                    BindingAction::IncreaseFontSize | BindingAction::DecreaseFontSize
+                )
+            {
+                continue;
+            }
 
-                if let Some(delta) = delta {
+            match action {
+                BindingAction::None => {}
+                BindingAction::ToggleMode => {
+                    presentation.toggle();
+                    selection.clear();
+                    redraw.request();
+                    continue;
+                }
+                BindingAction::Copy => {
+                    if let Some(text) = selection.selected_text(runtime.parser.screen())
+                        && !text.is_empty()
+                    {
+                        clipboard.copy(&text);
+                    }
+                    if selection.clear() {
+                        redraw.request();
+                    }
+                    continue;
+                }
+                BindingAction::Paste => {
+                    if let Some(text) = clipboard.paste() {
+                        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+                        let mut bytes = Vec::from(b"\x1b[200~".as_slice());
+                        bytes.extend_from_slice(normalized.as_bytes());
+                        bytes.extend_from_slice(b"\x1b[201~");
+                        runtime.write_input(&bytes);
+                    } else {
+                        warn!("failed to read clipboard contents for paste");
+                    }
+                    if selection.clear() {
+                        redraw.request();
+                    }
+                    continue;
+                }
+                BindingAction::IncreaseFontSize | BindingAction::DecreaseFontSize => {
+                    let delta = if action == BindingAction::IncreaseFontSize {
+                        1
+                    } else {
+                        -1
+                    };
                     if terminal.adjust_font_size(delta) {
                         let char_dims = terminal.char_dimensions().max(UVec2::ONE);
                         let cols = ((viewport.size.x / char_dims.x as f32).floor() as u16).max(1);
@@ -110,43 +263,6 @@ pub fn handle_keyboard_input(
             }
         }
 
-        if event.state == ButtonState::Pressed && !event.repeat && event.key_code == KeyCode::F2 {
-            presentation.toggle();
-            selection.clear();
-            redraw.request();
-            continue;
-        }
-
-        if event.state == ButtonState::Pressed && !event.repeat {
-            if is_ctrl_alt_shortcut(&keyboard, KeyCode::KeyC, event.key_code) {
-                if let Some(text) = selection.selected_text(runtime.parser.screen())
-                    && !text.is_empty()
-                {
-                    clipboard.copy(&text);
-                }
-                if selection.clear() {
-                    redraw.request();
-                }
-                continue;
-            }
-
-            if is_ctrl_alt_shortcut(&keyboard, KeyCode::KeyV, event.key_code) {
-                if let Some(text) = clipboard.paste() {
-                    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-                    let mut bytes = Vec::from(b"\x1b[200~".as_slice());
-                    bytes.extend_from_slice(normalized.as_bytes());
-                    bytes.extend_from_slice(b"\x1b[201~");
-                    runtime.write_input(&bytes);
-                } else {
-                    warn!("failed to read clipboard contents for paste");
-                }
-                if selection.clear() {
-                    redraw.request();
-                }
-                continue;
-            }
-        }
-
         if event.state == ButtonState::Pressed
             && !is_modifier_key(event.key_code)
             && selection.clear()
@@ -156,6 +272,93 @@ pub fn handle_keyboard_input(
 
         if let Some(input) = keyboard.handle_event(event) {
             runtime.write_input(&input);
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct BindingModifiers {
+    control: bool,
+    alt: bool,
+    shift: bool,
+    super_key: bool,
+}
+
+impl BindingModifiers {
+    fn matches(self, current: Self) -> bool {
+        (!self.control || current.control)
+            && (!self.alt || current.alt)
+            && (!self.shift || current.shift)
+            && (!self.super_key || current.super_key)
+    }
+
+    fn count(self) -> usize {
+        self.control as usize + self.alt as usize + self.shift as usize + self.super_key as usize
+    }
+}
+
+#[derive(Clone, Copy)]
+struct KeyBinding {
+    key_code: KeyCode,
+    modifiers: BindingModifiers,
+    action: BindingAction,
+}
+
+impl KeyBinding {
+    fn new(key_code: KeyCode, modifiers: BindingModifiers, action: BindingAction) -> Self {
+        Self {
+            key_code,
+            modifiers,
+            action,
+        }
+    }
+
+    fn from_config(config: &KeyBindingConfig) -> Option<Self> {
+        let mut modifiers = BindingModifiers::default();
+        let mut key_code = None;
+
+        for token in config
+            .key
+            .split('|')
+            .chain(config.with.split('|'))
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+        {
+            if let Some(modifier) = parse_modifier(token) {
+                modifier.apply(&mut modifiers);
+                continue;
+            }
+
+            if key_code.is_some() {
+                return None;
+            }
+
+            key_code = parse_key_code(token);
+        }
+
+        Some(Self::new(key_code?, modifiers, config.action))
+    }
+
+    fn same_trigger(&self, other: &Self) -> bool {
+        self.key_code == other.key_code && self.modifiers == other.modifiers
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ParsedModifier {
+    Control,
+    Alt,
+    Shift,
+    Super,
+}
+
+impl ParsedModifier {
+    fn apply(self, modifiers: &mut BindingModifiers) {
+        match self {
+            Self::Control => modifiers.control = true,
+            Self::Alt => modifiers.alt = true,
+            Self::Shift => modifiers.shift = true,
+            Self::Super => modifiers.super_key = true,
         }
     }
 }
@@ -234,14 +437,6 @@ fn translate_key(
     bytes
 }
 
-fn is_ctrl_alt_shortcut(
-    keyboard: &TerminalKeyboard,
-    shortcut_key: KeyCode,
-    event_key: KeyCode,
-) -> bool {
-    event_key == shortcut_key && keyboard.ctrl_pressed && keyboard.alt_pressed
-}
-
 fn is_modifier_key(key: KeyCode) -> bool {
     matches!(
         key,
@@ -254,6 +449,88 @@ fn is_modifier_key(key: KeyCode) -> bool {
             | KeyCode::SuperLeft
             | KeyCode::SuperRight
     )
+}
+
+fn parse_key_code(key: &str) -> Option<KeyCode> {
+    match key.trim().to_ascii_lowercase().as_str() {
+        "a" => Some(KeyCode::KeyA),
+        "b" => Some(KeyCode::KeyB),
+        "c" => Some(KeyCode::KeyC),
+        "d" => Some(KeyCode::KeyD),
+        "e" => Some(KeyCode::KeyE),
+        "f" => Some(KeyCode::KeyF),
+        "g" => Some(KeyCode::KeyG),
+        "h" => Some(KeyCode::KeyH),
+        "i" => Some(KeyCode::KeyI),
+        "j" => Some(KeyCode::KeyJ),
+        "k" => Some(KeyCode::KeyK),
+        "l" => Some(KeyCode::KeyL),
+        "m" => Some(KeyCode::KeyM),
+        "n" => Some(KeyCode::KeyN),
+        "o" => Some(KeyCode::KeyO),
+        "p" => Some(KeyCode::KeyP),
+        "q" => Some(KeyCode::KeyQ),
+        "r" => Some(KeyCode::KeyR),
+        "s" => Some(KeyCode::KeyS),
+        "t" => Some(KeyCode::KeyT),
+        "u" => Some(KeyCode::KeyU),
+        "v" => Some(KeyCode::KeyV),
+        "w" => Some(KeyCode::KeyW),
+        "x" => Some(KeyCode::KeyX),
+        "y" => Some(KeyCode::KeyY),
+        "z" => Some(KeyCode::KeyZ),
+        "0" => Some(KeyCode::Digit0),
+        "1" => Some(KeyCode::Digit1),
+        "2" => Some(KeyCode::Digit2),
+        "3" => Some(KeyCode::Digit3),
+        "4" => Some(KeyCode::Digit4),
+        "5" => Some(KeyCode::Digit5),
+        "6" => Some(KeyCode::Digit6),
+        "7" => Some(KeyCode::Digit7),
+        "8" => Some(KeyCode::Digit8),
+        "9" => Some(KeyCode::Digit9),
+        "f1" => Some(KeyCode::F1),
+        "f2" => Some(KeyCode::F2),
+        "f3" => Some(KeyCode::F3),
+        "f4" => Some(KeyCode::F4),
+        "f5" => Some(KeyCode::F5),
+        "f6" => Some(KeyCode::F6),
+        "f7" => Some(KeyCode::F7),
+        "f8" => Some(KeyCode::F8),
+        "f9" => Some(KeyCode::F9),
+        "f10" => Some(KeyCode::F10),
+        "f11" => Some(KeyCode::F11),
+        "f12" => Some(KeyCode::F12),
+        "up" => Some(KeyCode::ArrowUp),
+        "down" => Some(KeyCode::ArrowDown),
+        "left" => Some(KeyCode::ArrowLeft),
+        "right" => Some(KeyCode::ArrowRight),
+        "enter" => Some(KeyCode::Enter),
+        "tab" => Some(KeyCode::Tab),
+        "space" => Some(KeyCode::Space),
+        "backspace" => Some(KeyCode::Backspace),
+        "escape" | "esc" => Some(KeyCode::Escape),
+        "delete" => Some(KeyCode::Delete),
+        "home" => Some(KeyCode::Home),
+        "end" => Some(KeyCode::End),
+        "pageup" | "page_up" => Some(KeyCode::PageUp),
+        "pagedown" | "page_down" => Some(KeyCode::PageDown),
+        "equal" | "=" | "plus" | "+" => Some(KeyCode::Equal),
+        "minus" | "-" => Some(KeyCode::Minus),
+        "numpadadd" | "numpad_add" => Some(KeyCode::NumpadAdd),
+        "numpadsubtract" | "numpad_subtract" => Some(KeyCode::NumpadSubtract),
+        _ => None,
+    }
+}
+
+fn parse_modifier(token: &str) -> Option<ParsedModifier> {
+    match token.trim().to_ascii_lowercase().as_str() {
+        "control" | "ctrl" => Some(ParsedModifier::Control),
+        "alt" => Some(ParsedModifier::Alt),
+        "shift" => Some(ParsedModifier::Shift),
+        "super" | "cmd" | "command" | "meta" => Some(ParsedModifier::Super),
+        _ => None,
+    }
 }
 
 fn ctrl_keycode_byte(key: KeyCode) -> Option<u8> {

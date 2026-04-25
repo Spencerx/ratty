@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::keyboard::{TerminalClipboard, handle_keyboard_input};
+use crate::keyboard::{TerminalClipboard, TerminalKeyBindings, handle_keyboard_input};
 use crate::mouse::{TerminalSelection, handle_mouse_input};
 use crate::scene::{apply_terminal_presentation, setup_scene};
 use crate::systems::{
@@ -14,6 +14,7 @@ impl Plugin for TerminalPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<TerminalSelection>()
             .init_resource::<TerminalRedrawState>()
+            .init_resource::<TerminalKeyBindings>()
             .init_non_send_resource::<TerminalClipboard>()
             .add_systems(Startup, setup_scene)
             .add_systems(Update, pump_pty_output)
