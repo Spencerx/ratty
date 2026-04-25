@@ -11,8 +11,8 @@ use parley_ratatui::{
 };
 
 use crate::config::{
-    TERMINAL_FONT_FAMILY_NAME, TERMINAL_FONT_SIZE, TERMINAL_TEXTURE_LABEL, THEME_BG, THEME_BG_RGB,
-    THEME_CURSOR_RGB, THEME_FG, THEME_FG_RGB,
+    TERMINAL_FONT_FAMILY_NAME, TERMINAL_FONT_SIZE, TERMINAL_TEXTURE_LABEL, THEME_BG,
+    THEME_BG_RGB, THEME_CURSOR_RGB, THEME_FG, THEME_FG_RGB,
 };
 use crate::mouse::TerminalSelection;
 
@@ -48,6 +48,7 @@ pub struct TerminalSurface {
     pub back_image_handle: Option<Handle<Image>>,
     pub cols: u16,
     pub rows: u16,
+    font_size: i32,
     renderer: TerminalRenderer,
     gpu: OffscreenGpu,
 }
@@ -110,32 +111,7 @@ impl TerminalSurface {
         let mut tui = Terminal::new(backend)?;
         let _ = tui.clear();
         tui.hide_cursor()?;
-
-        let theme = Theme {
-            foreground: parley_ratatui::Rgba::rgb(THEME_FG_RGB.0, THEME_FG_RGB.1, THEME_FG_RGB.2),
-            background: parley_ratatui::Rgba::rgb(THEME_BG_RGB.0, THEME_BG_RGB.1, THEME_BG_RGB.2),
-            cursor: parley_ratatui::Rgba::rgb(
-                THEME_CURSOR_RGB.0,
-                THEME_CURSOR_RGB.1,
-                THEME_CURSOR_RGB.2,
-            ),
-            ..Theme::default()
-        };
-        let font = BundledFont::from_static(TERMINAL_FONT_DATA)
-            .with_family_name(TERMINAL_FONT_FAMILY_NAME);
-        let font_options = FontOptions::default().with_font_stack(
-            parley_ratatui::FontStack::new(font.clone())
-                .with_bold(font.clone())
-                .with_italic(font.clone())
-                .with_bold_italic(font),
-        );
-        let renderer = TerminalRenderer::new(
-            FontOptions {
-                size: TERMINAL_FONT_SIZE as f32,
-                ..font_options
-            },
-            theme,
-        );
+        let renderer = build_terminal_renderer(TERMINAL_FONT_SIZE);
         let (width, height) = renderer.texture_size_for_buffer(tui.backend().buffer());
         let gpu = pollster::block_on(OffscreenGpu::new(width, height))?;
 
@@ -145,9 +121,25 @@ impl TerminalSurface {
             back_image_handle: None,
             cols,
             rows,
+            font_size: TERMINAL_FONT_SIZE,
             renderer,
             gpu,
         })
+    }
+
+    pub fn adjust_font_size(&mut self, delta: i32) -> bool {
+        let new_size = self.font_size + delta;
+        if new_size == self.font_size {
+            return false;
+        }
+
+        self.font_size = new_size;
+        self.renderer = build_terminal_renderer(self.font_size);
+        let (width, height) = self
+            .renderer
+            .texture_size_for_buffer(self.tui.backend().buffer());
+        self.gpu.resize(width, height);
+        true
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -232,6 +224,33 @@ impl TerminalSurface {
 
         Ok(())
     }
+}
+
+fn build_terminal_renderer(font_size: i32) -> TerminalRenderer {
+    let theme = Theme {
+        foreground: parley_ratatui::Rgba::rgb(THEME_FG_RGB.0, THEME_FG_RGB.1, THEME_FG_RGB.2),
+        background: parley_ratatui::Rgba::rgb(THEME_BG_RGB.0, THEME_BG_RGB.1, THEME_BG_RGB.2),
+        cursor: parley_ratatui::Rgba::rgb(
+            THEME_CURSOR_RGB.0,
+            THEME_CURSOR_RGB.1,
+            THEME_CURSOR_RGB.2,
+        ),
+        ..Theme::default()
+    };
+    let font = BundledFont::from_static(TERMINAL_FONT_DATA).with_family_name(TERMINAL_FONT_FAMILY_NAME);
+    let font_options = FontOptions::default().with_font_stack(
+        parley_ratatui::FontStack::new(font.clone())
+            .with_bold(font.clone())
+            .with_italic(font.clone())
+            .with_bold_italic(font),
+    );
+    TerminalRenderer::new(
+        FontOptions {
+            size: font_size as f32,
+            ..font_options
+        },
+        theme,
+    )
 }
 
 pub struct TerminalWidget<'a> {

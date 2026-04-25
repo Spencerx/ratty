@@ -7,8 +7,8 @@ use arboard::Clipboard;
 
 use crate::mouse::TerminalSelection;
 use crate::runtime::TerminalRuntime;
-use crate::scene::TerminalPresentation;
-use crate::terminal::TerminalRedrawState;
+use crate::scene::{TerminalPresentation, TerminalViewport};
+use crate::terminal::{TerminalRedrawState, TerminalSurface};
 
 pub struct TerminalClipboard {
     clipboard: Option<Clipboard>,
@@ -80,10 +80,36 @@ pub fn handle_keyboard_input(
     mut selection: ResMut<TerminalSelection>,
     mut presentation: ResMut<TerminalPresentation>,
     mut clipboard: NonSendMut<TerminalClipboard>,
-    runtime: NonSend<TerminalRuntime>,
+    mut runtime: NonSendMut<TerminalRuntime>,
+    mut terminal: NonSendMut<TerminalSurface>,
+    viewport: Res<TerminalViewport>,
     mut redraw: ResMut<TerminalRedrawState>,
 ) {
     for event in keyboard_events.read() {
+        if event.state == ButtonState::Pressed {
+            if keyboard.ctrl_pressed {
+                let delta = match event.key_code {
+                    KeyCode::NumpadAdd => Some(1),
+                    KeyCode::NumpadSubtract => Some(-1),
+                    KeyCode::Minus => Some(-1),
+                    KeyCode::Equal => Some(1),
+                    _ => None,
+                };
+
+                if let Some(delta) = delta {
+                    if terminal.adjust_font_size(delta) {
+                        let char_dims = terminal.char_dimensions().max(UVec2::ONE);
+                        let cols = ((viewport.size.x / char_dims.x as f32).floor() as u16).max(1);
+                        let rows = ((viewport.size.y / char_dims.y as f32).floor() as u16).max(1);
+                        runtime.resize(cols, rows);
+                        terminal.resize(cols, rows);
+                        redraw.request();
+                    }
+                    continue;
+                }
+            }
+        }
+
         if event.state == ButtonState::Pressed && !event.repeat && event.key_code == KeyCode::F2 {
             presentation.toggle();
             selection.clear();
