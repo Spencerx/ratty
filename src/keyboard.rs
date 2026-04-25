@@ -50,7 +50,15 @@ impl FromWorld for TerminalKeyBindings {
     fn from_world(world: &mut World) -> Self {
         let app_config = world.resource::<AppConfig>();
         let mut bindings = vec![
-            KeyBinding::new(KeyCode::F2, BindingModifiers::default(), BindingAction::ToggleMode),
+            KeyBinding::new(
+                KeyCode::Enter,
+                BindingModifiers {
+                    control: true,
+                    alt: true,
+                    ..default()
+                },
+                BindingAction::ToggleMode,
+            ),
             KeyBinding::new(
                 KeyCode::KeyC,
                 BindingModifiers {
