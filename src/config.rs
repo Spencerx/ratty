@@ -45,10 +45,6 @@ impl AppConfig {
         let mut config: Self =
             toml::from_str(&contents).with_context(|| format!("failed to parse {}", path.display()))?;
         let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
-        if config.font.path.is_relative() {
-            config.font.path = config_dir.join(&config.font.path);
-        }
-
         if config.cursor.model.path.is_relative() {
             config.cursor.model.path = config_dir.join(&config.cursor.model.path);
         }
@@ -156,16 +152,36 @@ pub enum BindingAction {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct FontConfig {
-    pub path: PathBuf,
+    pub family: String,
+    pub style: FontStyleConfig,
     pub size: i32,
 }
 
 impl Default for FontConfig {
     fn default() -> Self {
         Self {
-            path: PathBuf::from("assets/fonts/JetBrainsMonoNerdFontCompleteMono.ttf"),
+            family: "JetBrainsMono Nerd Font Mono".to_string(),
+            style: FontStyleConfig::Regular,
             size: 14,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub enum FontStyleConfig {
+    #[serde(rename = "Regular")]
+    Regular,
+    #[serde(rename = "Bold")]
+    Bold,
+    #[serde(rename = "Italic")]
+    Italic,
+    #[serde(rename = "BoldItalic")]
+    BoldItalic,
+}
+
+impl Default for FontStyleConfig {
+    fn default() -> Self {
+        Self::Regular
     }
 }
 

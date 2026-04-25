@@ -86,6 +86,7 @@ pub fn redraw_soft_terminal(
                 selection: &selection,
                 theme_fg,
                 theme_bg,
+                font_style: app_config.font.style,
             },
             frame.area(),
         );

@@ -16,8 +16,9 @@ args = []
 TERM = "xterm-256color"
 
 [font]
-path = "../assets/fonts/JetBrainsMonoNerdFontCompleteMono.ttf"
-size = 14
+family = "Ubuntu Mono Ligaturized"
+style = "Regular"
+size = 20
 
 [theme]
 foreground = "#dcd7ba"
@@ -38,7 +39,7 @@ bob_amplitude = 0.08
 
 [bindings]
 keys = [
-  { key = "Alt", with = "Enter", action = "ToggleMode" },
+  { key = "Enter", with = "Control | alt", action = "ToggleMode" },
   { key = "C", with = "Control | alt", action = "Copy" },
   { key = "V", with = "Control | alt", action = "Paste" },
   { key = "Equal", with = "Control", action = "IncreaseFontSize" },
