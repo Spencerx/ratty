@@ -190,6 +190,7 @@ pub fn sync_asset_to_terminal_cursor(
     terminal: NonSend<TerminalSurface>,
     viewport: Res<TerminalViewport>,
     presentation: Res<TerminalPresentation>,
+    plane_warp: Res<TerminalPlaneWarp>,
     time: Res<Time>,
     plane_query: Query<&Transform, (With<TerminalPlane>, Without<CursorModel>)>,
     mut query: Query<
@@ -203,6 +204,7 @@ pub fn sync_asset_to_terminal_cursor(
         &terminal,
         &viewport,
         presentation.mode,
+        plane_warp.amount,
         time.elapsed_secs(),
         &plane_query,
     );
@@ -220,6 +222,7 @@ fn cursor_pose(
     terminal: &TerminalSurface,
     viewport: &TerminalViewport,
     mode: TerminalPresentationMode,
+    plane_warp_amount: f32,
     elapsed_secs: f32,
     plane_query: &Query<&Transform, (With<TerminalPlane>, Without<CursorModel>)>,
 ) -> (Vec3, Quat, f32, Visibility) {
@@ -258,10 +261,20 @@ fn cursor_pose(
                 .expect("terminal plane should exist while app is running");
             let plane_local_x = cursor_x / cols - 0.5;
             let plane_local_y = 0.5 - (cursor_row + 0.5) / rows;
+            let surface_z = if plane_warp_amount > 0.0 {
+                let pulse = plane_warp_amount * (0.96 + 0.04 * (elapsed_secs * 2.2).sin());
+                let radius =
+                    (plane_local_x * plane_local_x + plane_local_y * plane_local_y).sqrt();
+                let core = (-radius * 9.0).exp();
+                let ring = (-(radius - 0.22).powi(2) * 18.0).exp();
+                -(core * 360.0 + ring * 72.0) * pulse
+            } else {
+                0.0
+            };
             let local_position = Vec3::new(
                 plane_local_x,
                 plane_local_y,
-                app_config.cursor.model.plane_offset,
+                surface_z + app_config.cursor.model.plane_offset,
             );
             (
                 plane_transform.transform_point(local_position),
