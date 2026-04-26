@@ -35,7 +35,7 @@ pub fn pump_pty_output(
     loop {
         match runtime.rx.try_recv() {
             Ok(chunk) => {
-                let prev_rows: Option<Vec<String>> = if inline_objects.has_anchors() {
+                let prev_rows: Option<Vec<String>> = if !inline_objects.anchors.is_empty() {
                     let (_, cols) = runtime.parser.screen().size();
                     Some(
                         runtime
@@ -118,13 +118,23 @@ pub fn sync_inline_objects(
 
     let cell_width = viewport.size.x / terminal.cols.max(1) as f32;
     let cell_height = viewport.size.y / terminal.rows.max(1) as f32;
-    let renderable_ids = inline_objects.renderable_object_ids(terminal.rows);
+    let renderable_ids = inline_objects
+        .anchors
+        .iter()
+        .filter_map(|(object_id, anchor)| {
+            inline_objects.objects.get(object_id)?;
+            let start = anchor.row as i32;
+            let end = start + anchor.rows as i32;
+            (start < terminal.rows as i32 && end > 0).then_some(*object_id)
+        })
+        .collect::<Vec<_>>();
 
     let mut plane_children = Vec::new();
     for object_id in renderable_ids {
         let image_handle = {
             let object = inline_objects
-                .object_mut(object_id)
+                .objects
+                .get_mut(&object_id)
                 .expect("inline object should exist");
             match object {
                 InlineObject::KittyImage(object) => {
@@ -152,7 +162,8 @@ pub fn sync_inline_objects(
             }
         };
         let anchor = inline_objects
-            .anchor(object_id)
+            .anchors
+            .get(&object_id)
             .expect("inline object anchor should exist");
         let columns = anchor.columns;
         let rows = anchor.rows;

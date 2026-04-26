@@ -27,15 +27,11 @@ pub struct TerminalInlineObjects {
     last_viewport_size: Vec2,
     last_cols: u16,
     last_rows: u16,
-    objects: HashMap<u32, InlineObject>,
-    anchors: HashMap<u32, InlineAnchor>,
+    pub(crate) objects: HashMap<u32, InlineObject>,
+    pub(crate) anchors: HashMap<u32, InlineAnchor>,
 }
 
 impl TerminalInlineObjects {
-    pub fn has_anchors(&self) -> bool {
-        !self.anchors.is_empty()
-    }
-
     pub fn consume_pty_output(&mut self, chunk: &[u8], parser: &mut vt100::Parser) {
         self.pending_bytes.extend_from_slice(chunk);
 
@@ -98,26 +94,6 @@ impl TerminalInlineObjects {
         self.last_viewport_size = viewport_size;
         self.last_cols = cols;
         self.last_rows = rows;
-    }
-
-    pub fn renderable_object_ids(&self, visible_rows: u16) -> Vec<u32> {
-        self.anchors
-            .iter()
-            .filter_map(|(object_id, anchor)| {
-                self.objects.get(object_id)?;
-                let start = anchor.row as i32;
-                let end = start + anchor.rows as i32;
-                (start < visible_rows as i32 && end > 0).then_some(*object_id)
-            })
-            .collect()
-    }
-
-    pub fn object_mut(&mut self, object_id: u32) -> Option<&mut InlineObject> {
-        self.objects.get_mut(&object_id)
-    }
-
-    pub fn anchor(&self, object_id: u32) -> Option<&InlineAnchor> {
-        self.anchors.get(&object_id)
     }
 
     pub fn apply_scroll(&mut self, rows_scrolled: u16) {
