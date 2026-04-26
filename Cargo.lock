@@ -5169,8 +5169,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arboard",
+ "base64",
  "bevy",
  "etcetera",
+ "image",
  "parley_ratatui",
  "pollster",
  "portable-pty",

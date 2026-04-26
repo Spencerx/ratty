@@ -8,6 +8,7 @@ Features:
 
 - Spinning rat cursor
 - 2D or 3D mode
+- Image support (via Kitty graphics protocol)
 
 Project goals:
 

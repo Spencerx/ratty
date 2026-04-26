@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use crate::config::AppConfig;
+use crate::inline::TerminalInlineObjectMesh;
 use crate::terminal::TerminalSurface;
 
 #[derive(Component)]
@@ -171,6 +172,9 @@ pub fn setup_scene(
     commands.insert_resource(TerminalPlaneMeshes {
         front: front_mesh.clone(),
         back: back_mesh.clone(),
+    });
+    commands.insert_resource(TerminalInlineObjectMesh {
+        quad: meshes.add(Rectangle::new(1.0, 1.0)),
     });
     commands.insert_resource(TerminalPlaneWarp::default());
 

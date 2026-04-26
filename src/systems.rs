@@ -2,12 +2,18 @@ use std::sync::mpsc::TryRecvError;
 
 use bevy::app::AppExit;
 use bevy::ecs::message::{MessageReader, MessageWriter};
+use bevy::image::ImageSampler;
 use bevy::mesh::VertexAttributeValues;
 use bevy::prelude::*;
+use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use ratatui::style::Color as TuiColor;
 use bevy::window::{PrimaryWindow, WindowResized};
 
 use crate::config::{AppConfig, CURSOR_DEPTH};
+use crate::inline::{
+    TerminalInlineObjectMesh, TerminalInlineObjectPlane, TerminalInlineObjectSprite,
+    InlineObject, TerminalInlineObjects,
+};
 use crate::model::CursorModel;
 use crate::model::spawn_cursor_model;
 use crate::mouse::TerminalSelection;
@@ -21,6 +27,7 @@ use crate::terminal::{TerminalRedrawState, TerminalSurface, TerminalWidget};
 
 pub fn pump_pty_output(
     mut runtime: NonSendMut<TerminalRuntime>,
+    mut inline_objects: ResMut<TerminalInlineObjects>,
     mut app_exit: MessageWriter<AppExit>,
     mut redraw: ResMut<TerminalRedrawState>,
 ) {
@@ -28,7 +35,26 @@ pub fn pump_pty_output(
     loop {
         match runtime.rx.try_recv() {
             Ok(chunk) => {
-                runtime.parser.process(&chunk);
+                let prev_rows: Option<Vec<String>> = if inline_objects.has_anchors() {
+                    let (_, cols) = runtime.parser.screen().size();
+                    Some(
+                        runtime
+                            .parser
+                            .screen()
+                            .rows(0, cols)
+                            .collect::<Vec<_>>(),
+                    )
+                } else {
+                    None
+                };
+                inline_objects.consume_pty_output(&chunk, &mut runtime.parser);
+                if let Some(prev_rows) = prev_rows {
+                    let (_, cols) = runtime.parser.screen().size();
+                    let next_rows = runtime.parser.screen().rows(0, cols).collect::<Vec<_>>();
+                    let scrolled = infer_upward_scroll(&prev_rows, &next_rows);
+                    inline_objects.apply_scroll(scrolled);
+                }
+                inline_objects.refresh_placeholder_anchors(runtime.parser.screen());
                 processed_output = true;
             }
             Err(TryRecvError::Empty) => break,
@@ -44,6 +70,154 @@ pub fn pump_pty_output(
 
     if processed_output {
         redraw.request();
+    }
+}
+
+fn infer_upward_scroll(prev_rows: &[String], next_rows: &[String]) -> u16 {
+    let max_shift = prev_rows.len().min(next_rows.len());
+    for shift in (1..max_shift).rev() {
+        if prev_rows
+            .iter()
+            .skip(shift)
+            .zip(next_rows.iter())
+            .all(|(prev, next)| prev == next)
+        {
+            return shift as u16;
+        }
+    }
+    0
+}
+
+pub fn sync_inline_objects(
+    mut commands: Commands,
+    mut inline_objects: ResMut<TerminalInlineObjects>,
+    terminal: NonSend<TerminalSurface>,
+    viewport: Res<TerminalViewport>,
+    presentation: Res<TerminalPresentation>,
+    plane_query: Query<Entity, With<TerminalPlane>>,
+    sprite_query: Query<Entity, With<TerminalInlineObjectSprite>>,
+    plane_image_query: Query<Entity, With<TerminalInlineObjectPlane>>,
+    quad_mesh: Res<TerminalInlineObjectMesh>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+) {
+    if !inline_objects.needs_sync(viewport.size, terminal.cols, terminal.rows) {
+        return;
+    }
+
+    for entity in &sprite_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &plane_image_query {
+        commands.entity(entity).despawn();
+    }
+
+    let Ok(plane_entity) = plane_query.single() else {
+        return;
+    };
+
+    let cell_width = viewport.size.x / terminal.cols.max(1) as f32;
+    let cell_height = viewport.size.y / terminal.rows.max(1) as f32;
+    let renderable_ids = inline_objects.renderable_object_ids(terminal.rows);
+
+    let mut plane_children = Vec::new();
+    for object_id in renderable_ids {
+        let image_handle = {
+            let object = inline_objects
+                .object_mut(object_id)
+                .expect("inline object should exist");
+            match object {
+                InlineObject::KittyImage(object) => {
+                    if let Some(handle) = object.raster.handle.as_ref() {
+                        handle.clone()
+                    } else {
+                        let mut image = Image::new_fill(
+                            Extent3d {
+                                width: object.raster.width,
+                                height: object.raster.height,
+                                depth_or_array_layers: 1,
+                            },
+                            TextureDimension::D2,
+                            &[0, 0, 0, 0],
+                            TextureFormat::Rgba8UnormSrgb,
+                            bevy::asset::RenderAssetUsages::default(),
+                        );
+                        image.sampler = ImageSampler::nearest();
+                        image.data = Some(object.raster.rgba.clone());
+                        let handle = images.add(image);
+                        object.raster.handle = Some(handle.clone());
+                        handle
+                    }
+                }
+            }
+        };
+        let anchor = inline_objects
+            .anchor(object_id)
+            .expect("inline object anchor should exist");
+        let columns = anchor.columns;
+        let rows = anchor.rows;
+        let sprite_size = Vec2::new(columns as f32 * cell_width, rows as f32 * cell_height);
+        let center_x = viewport.center.x - viewport.size.x * 0.5
+            + (anchor.col as f32 + columns as f32 * 0.5) * cell_width;
+        let center_y = viewport.center.y + viewport.size.y * 0.5
+            - (anchor.row as f32 + rows as f32 * 0.5) * cell_height;
+
+        let mut sprite = Sprite::from_image(image_handle.clone());
+        sprite.custom_size = Some(sprite_size);
+        commands.spawn((
+            TerminalInlineObjectSprite,
+            sprite,
+            Transform::from_translation(Vec3::new(center_x, center_y, 5.0)),
+            match presentation.mode {
+                TerminalPresentationMode::Flat2d => Visibility::Visible,
+                TerminalPresentationMode::Plane3d => Visibility::Hidden,
+            },
+        ));
+
+        let local_width = columns as f32 / terminal.cols.max(1) as f32;
+        let local_height = rows as f32 / terminal.rows.max(1) as f32;
+        let local_x = (anchor.col as f32 + columns as f32 * 0.5) / terminal.cols.max(1) as f32
+            - 0.5;
+        let local_y = 0.5 - (anchor.row as f32 + rows as f32 * 0.5) / terminal.rows.max(1) as f32;
+        let plane_child = commands
+            .spawn((
+                TerminalInlineObjectPlane,
+                Mesh3d(quad_mesh.quad.clone()),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::WHITE,
+                    base_color_texture: Some(image_handle),
+                    alpha_mode: AlphaMode::Blend,
+                    unlit: true,
+                    ..default()
+                })),
+                Transform {
+                    translation: Vec3::new(local_x, local_y, 1.5),
+                    scale: Vec3::new(local_width, local_height, 1.0),
+                    ..default()
+                },
+            ))
+            .id();
+        plane_children.push(plane_child);
+    }
+
+    if !plane_children.is_empty() {
+        commands.entity(plane_entity).add_children(&plane_children);
+    }
+
+    inline_objects.finish_sync(viewport.size, terminal.cols, terminal.rows);
+}
+
+pub fn apply_inline_objects(
+    presentation: Res<TerminalPresentation>,
+    mut sprite_query: Query<&mut Visibility, With<TerminalInlineObjectSprite>>,
+) {
+    let visibility = match presentation.mode {
+        TerminalPresentationMode::Flat2d => Visibility::Visible,
+        TerminalPresentationMode::Plane3d => Visibility::Hidden,
+    };
+
+    for mut sprite_visibility in &mut sprite_query {
+        *sprite_visibility = visibility;
     }
 }
 

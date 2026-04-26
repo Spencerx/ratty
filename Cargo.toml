@@ -6,8 +6,10 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0"
 arboard = "3.6"
+base64 = "0.22"
 bevy = { version = "0.18.1", default-features = true }
 etcetera = "0.11"
+image = { version = "0.25", default-features = false, features = ["png"] }
 parley_ratatui = "0.2.0"
 pollster = "0.4"
 portable-pty = "0.8"

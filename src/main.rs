@@ -1,5 +1,7 @@
 mod config;
+mod inline;
 mod keyboard;
+mod kitty;
 mod model;
 mod mouse;
 mod plugin;
