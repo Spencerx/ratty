@@ -64,13 +64,13 @@ ESC _ ratty;g;s ESC \
 Ratty replies:
 
 ```text
-ESC _ ratty;g;s;v=1;fmt=obj;path=1 ESC \
+ESC _ ratty;g;s;v=1;fmt=obj|glb;path=1 ESC \
 ```
 
 Fields:
 
 - `v=1`: protocol version
-- `fmt=obj`: Wavefront OBJ is supported in v1
+- `fmt=glb`: `obj` and `glb` are supported in v1
 - `path=1`: path-based object registration is supported
 
 If no reply arrives, the terminal does not support the protocol.
@@ -85,12 +85,12 @@ Client sends:
 ESC _ ratty;g;r;id=42;fmt=obj;path=CairoSpinyMouse.obj ESC \
 ```
 
-This registers object `42` using an OBJ asset.
+This registers object `42` using an object asset.
 
 #### Required fields
 
 - `id`: object id chosen by the application
-- `fmt`: payload format, `obj` in v1
+- `fmt`: payload format, `obj` or `glb` in v1
 - `path`: object path known to Ratty
 
 #### Reply

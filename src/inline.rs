@@ -4,9 +4,11 @@ use std::path::Path;
 use bevy::prelude::*;
 
 use crate::kitty::{KittyOperation, KittyParserState, refresh_kitty_placeholder_anchors};
-use crate::model::load_object_meshes;
+use crate::model::{ObjectSource, load_object_source};
 use crate::rgp::{consume_sequence as consume_rgp_sequence, register_reply, support_reply, RgpOperation};
 const APC_START: &[u8] = b"\x1b_";
+const ST: &[u8] = b"\x1b\\";
+const C1_ST: u8 = 0x9c;
 
 #[derive(Component)]
 pub struct TerminalInlineObjectSprite;
@@ -54,24 +56,7 @@ impl TerminalInlineObjects {
             }
 
             let payload_start = start + APC_START.len();
-            let Some(end) = ({
-                let mut index = payload_start;
-                loop {
-                    if index >= self.pending_bytes.len() {
-                        break None;
-                    }
-                    if self.pending_bytes[index] == 0x9c {
-                        break Some(index + 1);
-                    }
-                    if index + 1 < self.pending_bytes.len()
-                        && self.pending_bytes[index] == b'\x1b'
-                        && self.pending_bytes[index + 1] == b'\\'
-                    {
-                        break Some(index + 2);
-                    }
-                    index += 1;
-                }
-            }) else {
+            let Some(end) = apc_end(&self.pending_bytes, payload_start) else {
                 self.pending_bytes.drain(..start);
                 return replies;
             };
@@ -130,6 +115,23 @@ impl TerminalInlineObjects {
         }
     }
 
+    fn set_anchor(&mut self, object_id: u32, anchor: InlineAnchor) {
+        self.anchors.insert(object_id, anchor);
+        self.dirty = true;
+    }
+
+    fn remove_object(&mut self, object_id: u32) {
+        self.objects.remove(&object_id);
+        self.anchors.remove(&object_id);
+        self.dirty = true;
+    }
+
+    fn clear_objects(&mut self) {
+        self.objects.clear();
+        self.anchors.clear();
+        self.dirty = true;
+    }
+
     fn handle_apc_sequence(
         &mut self,
         sequence: &[u8],
@@ -167,7 +169,7 @@ impl TerminalInlineObjects {
                 });
                 self.objects
                     .insert(object_id, InlineObject::KittyImage(image.rasterize()));
-                self.anchors.insert(
+                self.set_anchor(
                     object_id,
                     InlineAnchor {
                         row: anchor.row,
@@ -176,12 +178,11 @@ impl TerminalInlineObjects {
                         rows: anchor.rows,
                     },
                 );
-                self.dirty = true;
                 (true, None)
             }
             KittyOperation::PlaceExisting { object_id, anchor } => {
                 if self.objects.contains_key(&object_id) {
-                    self.anchors.insert(
+                    self.set_anchor(
                         object_id,
                         InlineAnchor {
                             row: anchor.row,
@@ -190,19 +191,15 @@ impl TerminalInlineObjects {
                             rows: anchor.rows,
                         },
                     );
-                    self.dirty = true;
                 }
                 (true, None)
             }
             KittyOperation::Delete { object_id } => {
                 if let Some(object_id) = object_id {
-                    self.objects.remove(&object_id);
-                    self.anchors.remove(&object_id);
+                    self.remove_object(object_id);
                 } else {
-                    self.objects.clear();
-                    self.anchors.clear();
+                    self.clear_objects();
                 }
-                self.dirty = true;
                 (true, None)
             }
         }
@@ -217,22 +214,27 @@ impl TerminalInlineObjects {
                 format,
                 path,
             } => {
-                if format != "obj" {
+                if format != "obj" && format != "glb" {
                     Some(register_reply(object_id, 1))
                 } else {
-                    match load_object_meshes(Path::new(&path)) {
-                        Ok((source, meshes)) => {
+                    match load_object_source(Path::new(&path)) {
+                        Ok((source, source_data)) => {
                             info!(
-                                "loaded RGP object {} from {} ({} mesh parts)",
+                                "registered RGP object {} from {}",
                                 object_id,
                                 source,
-                                meshes.len()
                             );
                             self.objects.insert(
                                 object_id,
-                                InlineObject::RgpObject(RgpInlineObject {
-                                    meshes,
-                                    handles: None,
+                                InlineObject::RgpObject(match source_data {
+                                    ObjectSource::Obj(meshes) => RgpInlineObject::Obj {
+                                        meshes,
+                                        handles: None,
+                                    },
+                                    ObjectSource::Gltf(asset_path) => RgpInlineObject::Gltf {
+                                        asset_path,
+                                        handle: None,
+                                    },
                                 }),
                             );
                             self.dirty = true;
@@ -247,7 +249,7 @@ impl TerminalInlineObjects {
             }
             RgpOperation::Place { object_id, anchor } => {
                 if self.objects.contains_key(&object_id) {
-                    self.anchors.insert(
+                    self.set_anchor(
                         object_id,
                         InlineAnchor {
                             row: anchor.row,
@@ -256,19 +258,15 @@ impl TerminalInlineObjects {
                             rows: anchor.rows,
                         },
                     );
-                    self.dirty = true;
                 }
                 None
             }
             RgpOperation::Delete { object_id } => {
                 if let Some(object_id) = object_id {
-                    self.objects.remove(&object_id);
-                    self.anchors.remove(&object_id);
+                    self.remove_object(object_id);
                 } else {
-                    self.objects.clear();
-                    self.anchors.clear();
+                    self.clear_objects();
                 }
-                self.dirty = true;
                 None
             }
             RgpOperation::Ignored => None,
@@ -305,6 +303,22 @@ impl TerminalInlineObjects {
     }
 }
 
+fn apc_end(bytes: &[u8], payload_start: usize) -> Option<usize> {
+    let mut index = payload_start;
+    loop {
+        if index >= bytes.len() {
+            return None;
+        }
+        if bytes[index] == C1_ST {
+            return Some(index + 1);
+        }
+        if index + 1 < bytes.len() && bytes[index] == ST[0] && bytes[index + 1] == ST[1] {
+            return Some(index + 2);
+        }
+        index += 1;
+    }
+}
+
 pub enum InlineObject {
     KittyImage(KittyInlineObject),
     RgpObject(RgpInlineObject),
@@ -322,9 +336,15 @@ pub struct KittyInlineObject {
     pub uses_placeholders: bool,
 }
 
-pub struct RgpInlineObject {
-    pub meshes: Vec<Mesh>,
-    pub handles: Option<Vec<Handle<Mesh>>>,
+pub enum RgpInlineObject {
+    Obj {
+        meshes: Vec<Mesh>,
+        handles: Option<Vec<Handle<Mesh>>>,
+    },
+    Gltf {
+        asset_path: String,
+        handle: Option<Handle<Scene>>,
+    },
 }
 
 impl InlineObject {

@@ -27,7 +27,8 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn load() -> anyhow::Result<Self> {
-        let strategy = choose_base_strategy().context("failed to determine system config directory")?;
+        let strategy =
+            choose_base_strategy().context("failed to determine system config directory")?;
         let system_path = strategy.config_dir().join(APP_NAME).join("ratty.toml");
         let local_path = PathBuf::from(CONFIG_PATH);
         let Some(path) = (if system_path.exists() {
@@ -42,8 +43,8 @@ impl AppConfig {
 
         let contents = fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let mut config: Self =
-            toml::from_str(&contents).with_context(|| format!("failed to parse {}", path.display()))?;
+        let mut config: Self = toml::from_str(&contents)
+            .with_context(|| format!("failed to parse {}", path.display()))?;
         let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
         if config.cursor.model.path.is_relative()
             && config

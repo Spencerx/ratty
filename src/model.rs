@@ -1,8 +1,9 @@
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
-use anyhow::{Context, ensure};
+use anyhow::{Context, bail, ensure};
 use bevy::asset::RenderAssetUsages;
+use bevy::gltf::GltfAssetLabel;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use rust_embed::RustEmbed;
@@ -16,10 +17,16 @@ struct EmbeddedObjects;
 #[derive(Component)]
 pub struct CursorModel;
 
+pub enum ObjectSource {
+    Obj(Vec<Mesh>),
+    Gltf(String),
+}
+
 pub fn spawn_cursor_model(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    asset_server: &AssetServer,
     app_config: &AppConfig,
 ) {
     let root = commands
@@ -29,6 +36,7 @@ pub fn spawn_cursor_model(
             Visibility::Visible,
         ))
         .id();
+
     let material = materials.add(StandardMaterial {
         base_color: Color::srgb_u8(255, 255, 255),
         emissive: LinearRgba::rgb(0.35, 0.35, 0.35),
@@ -39,8 +47,8 @@ pub fn spawn_cursor_model(
         ..default()
     });
 
-    match load_object_meshes(app_config.cursor.model.path.as_path()) {
-        Ok((source, loaded_meshes)) if !loaded_meshes.is_empty() => {
+    match load_object_source(app_config.cursor.model.path.as_path()) {
+        Ok((source, ObjectSource::Obj(loaded_meshes))) if !loaded_meshes.is_empty() => {
             info!(
                 "loaded cursor model from {} ({} mesh parts)",
                 source,
@@ -56,8 +64,16 @@ pub fn spawn_cursor_model(
                 }
             });
         }
+        Ok((source, ObjectSource::Gltf(asset_path))) => {
+            info!("loading cursor model from {}", source);
+            commands.entity(root).with_children(|parent| {
+                parent.spawn(SceneRoot(
+                    asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path)),
+                ));
+            });
+        }
         Err(error) => {
-            warn!("failed to load cursor OBJ model: {error:#}");
+            warn!("failed to resolve cursor model: {error:#}");
             commands.entity(root).with_children(|parent| {
                 parent.spawn((
                     Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -66,7 +82,7 @@ pub fn spawn_cursor_model(
             });
         }
         _ => {
-            warn!("no cursor OBJ model found; using cube cursor fallback");
+            warn!("no cursor model found; using cube cursor fallback");
             commands.entity(root).with_children(|parent| {
                 parent.spawn((
                     Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
@@ -77,15 +93,94 @@ pub fn spawn_cursor_model(
     }
 }
 
-pub fn load_object_meshes(path: &Path) -> anyhow::Result<(String, Vec<Mesh>)> {
-    if let Some(file_name) = path.file_name().and_then(|name| name.to_str())
+pub fn load_object_source(path: &Path) -> anyhow::Result<(String, ObjectSource)> {
+    let candidate = object_asset_path(path)?;
+    let extension = Path::new(&candidate)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    if let Some(file_name) = Path::new(&candidate).file_name().and_then(|name| name.to_str())
         && let Some(file) = EmbeddedObjects::get(file_name)
     {
-        return load_obj_meshes_from_bytes(file_name, &file.data)
-            .map(|meshes| (format!("embedded:{file_name}"), meshes));
+        return match extension.as_str() {
+            "obj" => load_obj_meshes_from_bytes(file_name, &file.data)
+                .map(|meshes| (format!("embedded:{file_name}"), ObjectSource::Obj(meshes))),
+            "glb" | "gltf" => {
+                let asset_path = ensure_scene_asset_path(&candidate, Some((file_name, &file.data)))?;
+                Ok((format!("embedded:{file_name}"), ObjectSource::Gltf(asset_path)))
+            }
+            _ => bail!("unsupported object format for {}", candidate),
+        };
     }
 
-    load_obj_meshes_from_path(path).map(|meshes| (path.display().to_string(), meshes))
+    match extension.as_str() {
+        "obj" => load_obj_meshes_from_path(Path::new("assets").join(&candidate).as_path())
+            .or_else(|_| load_obj_meshes_from_path(path))
+            .map(|meshes| (candidate.clone(), ObjectSource::Obj(meshes))),
+        "glb" | "gltf" => {
+            let asset_path = ensure_scene_asset_path(&candidate, None)?;
+            Ok((candidate, ObjectSource::Gltf(asset_path)))
+        }
+        _ => bail!("unsupported object format for {}", candidate),
+    }
+}
+
+fn ensure_scene_asset_path(
+    candidate: &str,
+    embedded: Option<(&str, &[u8])>,
+) -> anyhow::Result<String> {
+    let asset_file = Path::new("assets").join(candidate);
+    if !asset_file.exists() {
+        if let Some((name, bytes)) = embedded {
+            std::fs::create_dir_all(
+                asset_file
+                    .parent()
+                    .context("scene asset path has no parent directory")?,
+            )?;
+            std::fs::write(&asset_file, bytes)
+                .with_context(|| format!("failed to restore embedded scene {}", name))?;
+        } else {
+            bail!("asset not found: {}", asset_file.display());
+        }
+    }
+
+    Ok(candidate.to_string())
+}
+
+fn object_asset_path(path: &Path) -> anyhow::Result<String> {
+    let components = path.components().collect::<Vec<_>>();
+    if let Some(index) = components
+        .iter()
+        .position(|component| matches!(component, Component::Normal(part) if *part == "assets"))
+    {
+        let relative = components[index + 1..]
+            .iter()
+            .filter_map(|component| match component {
+                Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if !relative.is_empty() {
+            return Ok(relative.join("/"));
+        }
+    }
+
+    if path.is_absolute() {
+        bail!("absolute path is outside the asset root: {}", path.display());
+    }
+
+    let mut candidate = PathBuf::from(path);
+    if candidate.components().count() == 1 {
+        candidate = Path::new("objects").join(candidate);
+    }
+
+    let candidate = candidate
+        .to_str()
+        .context("asset path is not valid UTF-8")?
+        .replace('\\', "/");
+    Ok(candidate.strip_prefix("assets/").unwrap_or(&candidate).to_string())
 }
 
 fn load_obj_meshes_from_path(path: &Path) -> anyhow::Result<Vec<Mesh>> {
@@ -164,9 +259,6 @@ fn build_meshes(models: Vec<tobj::Model>, source: String) -> anyhow::Result<Vec<
         output.push(mesh);
     }
 
-    ensure!(
-        !output.is_empty(),
-        "no mesh content inside {source}",
-    );
+    ensure!(!output.is_empty(), "no mesh content inside {source}");
     Ok(output)
 }

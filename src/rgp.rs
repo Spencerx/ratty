@@ -87,7 +87,7 @@ pub enum RgpOperation {
 }
 
 pub fn support_reply() -> Vec<u8> {
-    b"\x1b_ratty;g;s;v=1;fmt=obj;path=1\x1b\\".to_vec()
+    b"\x1b_ratty;g;s;v=1;fmt=obj|glb;path=1\x1b\\".to_vec()
 }
 
 pub fn register_reply(object_id: u32, status: u8) -> Vec<u8> {

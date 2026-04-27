@@ -2,6 +2,7 @@ use std::sync::mpsc::TryRecvError;
 
 use bevy::app::AppExit;
 use bevy::ecs::message::{MessageReader, MessageWriter};
+use bevy::gltf::GltfAssetLabel;
 use bevy::image::ImageSampler;
 use bevy::mesh::{Indices, VertexAttributeValues};
 use bevy::prelude::*;
@@ -117,6 +118,7 @@ pub fn sync_inline_objects(
     sprite_query: Query<Entity, With<TerminalInlineObjectSprite>>,
     plane_image_query: Query<Entity, With<TerminalInlineObjectPlane>>,
     rgp_query: Query<Entity, With<TerminalRgpObject>>,
+    asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -183,7 +185,14 @@ pub fn sync_inline_objects(
                 );
             }
             InlineObject::RgpObject(object) => {
-                spawn_rgp_object(&mut commands, object_id, object, &mut materials, &mut meshes);
+                spawn_rgp_object(
+                    &mut commands,
+                    object_id,
+                    object,
+                    &mut materials,
+                    &mut meshes,
+                    &asset_server,
+                );
             }
         }
     }
@@ -338,48 +347,67 @@ fn spawn_rgp_object(
     object: &mut crate::inline::RgpInlineObject,
     materials: &mut Assets<StandardMaterial>,
     meshes: &mut Assets<Mesh>,
+    asset_server: &AssetServer,
 ) {
-    let handles = if let Some(handles) = object.handles.as_ref() {
-        handles.clone()
-    } else {
-        let handles = object
-            .meshes
-            .iter()
-            .cloned()
-            .map(|mesh| meshes.add(mesh))
-            .collect::<Vec<_>>();
-        object.handles = Some(handles.clone());
-        handles
-    };
-    let material = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        emissive: LinearRgba::rgb(0.35, 0.35, 0.35),
-        metallic: 0.0,
-        perceptual_roughness: 0.28,
-        reflectance: 0.6,
-        cull_mode: None,
-        ..default()
-    });
-    let root = commands
-        .spawn((
-            TerminalRgpObject { object_id },
-            Transform::default(),
-            Visibility::Visible,
-        ))
-        .id();
-    let children = handles
-        .into_iter()
-        .map(|handle| {
-            commands
+    match object {
+        crate::inline::RgpInlineObject::Obj { meshes: source_meshes, handles } => {
+            let mesh_handles = if let Some(existing_handles) = handles.as_ref() {
+                existing_handles.clone()
+            } else {
+                let mesh_handles = source_meshes
+                    .iter()
+                    .cloned()
+                    .map(|mesh| meshes.add(mesh))
+                    .collect::<Vec<_>>();
+                *handles = Some(mesh_handles.clone());
+                mesh_handles
+            };
+            let material = materials.add(StandardMaterial {
+                base_color: Color::WHITE,
+                emissive: LinearRgba::rgb(0.35, 0.35, 0.35),
+                metallic: 0.0,
+                perceptual_roughness: 0.28,
+                reflectance: 0.6,
+                cull_mode: None,
+                ..default()
+            });
+            let root = commands
                 .spawn((
-                    Mesh3d(handle),
-                    MeshMaterial3d(material.clone()),
+                    TerminalRgpObject { object_id },
                     Transform::default(),
+                    Visibility::Visible,
                 ))
-                .id()
-        })
-        .collect::<Vec<_>>();
-    commands.entity(root).add_children(&children);
+                .id();
+            let children = mesh_handles
+                .into_iter()
+                .map(|handle| {
+                    commands
+                        .spawn((
+                            Mesh3d(handle),
+                            MeshMaterial3d(material.clone()),
+                            Transform::default(),
+                        ))
+                        .id()
+                })
+                .collect::<Vec<_>>();
+            commands.entity(root).add_children(&children);
+        }
+        crate::inline::RgpInlineObject::Gltf { asset_path, handle } => {
+            let handle = if let Some(handle) = handle.as_ref() {
+                handle.clone()
+            } else {
+                let scene = asset_server.load(GltfAssetLabel::Scene(0).from_asset(asset_path.clone()));
+                *handle = Some(scene.clone());
+                scene
+            };
+            commands.spawn((
+                TerminalRgpObject { object_id },
+                Transform::default(),
+                Visibility::Visible,
+                SceneRoot(handle),
+            ));
+        }
+    }
 }
 
 pub fn apply_inline_objects(
@@ -470,6 +498,7 @@ pub fn redraw_soft_terminal(
     mut materials: ResMut<Assets<StandardMaterial>>,
     plane_materials: Query<&MeshMaterial3d<StandardMaterial>, With<TerminalPlane>>,
     plane_back_materials: Query<&MeshMaterial3d<StandardMaterial>, With<TerminalPlaneBack>>,
+    asset_server: Res<AssetServer>,
 ) {
     let needs_redraw = redraw.take();
     let force_live_redraw = presentation.mode == TerminalPresentationMode::Plane3d;
@@ -527,7 +556,13 @@ pub fn redraw_soft_terminal(
     }
 
     if !model_load_state.loaded {
-        spawn_cursor_model(&mut commands, &mut meshes, &mut materials, &app_config);
+        spawn_cursor_model(
+            &mut commands,
+            &mut meshes,
+            &mut materials,
+            &asset_server,
+            &app_config,
+        );
         model_load_state.loaded = true;
     }
 }
