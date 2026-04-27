@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::path::Path;
 
 use bevy::prelude::*;
 
-use crate::kitty::{
-    KittyAnchor, KittyOperation, KittyParserState, KITTY_APC_START,
-    refresh_kitty_placeholder_anchors,
-};
+use crate::kitty::{KittyOperation, KittyParserState, refresh_kitty_placeholder_anchors};
+use crate::model::load_object_meshes;
+use crate::rgp::{consume_sequence as consume_rgp_sequence, register_reply, support_reply, RgpOperation};
+const APC_START: &[u8] = b"\x1b_";
 
 #[derive(Component)]
 pub struct TerminalInlineObjectSprite;
@@ -13,11 +14,15 @@ pub struct TerminalInlineObjectSprite;
 #[derive(Component)]
 pub struct TerminalInlineObjectPlane;
 
+#[derive(Component)]
+pub struct TerminalRgpObject {
+    pub object_id: u32,
+}
+
 #[derive(Resource, Default)]
 pub struct TerminalInlineObjects {
     pending_bytes: Vec<u8>,
     kitty: KittyParserState,
-    next_object_id: u32,
     dirty: bool,
     last_viewport_size: Vec2,
     last_cols: u16,
@@ -27,27 +32,28 @@ pub struct TerminalInlineObjects {
 }
 
 impl TerminalInlineObjects {
-    pub fn consume_pty_output(&mut self, chunk: &[u8], parser: &mut vt100::Parser) {
+    pub fn consume_pty_output(&mut self, chunk: &[u8], parser: &mut vt100::Parser) -> Vec<Vec<u8>> {
         self.pending_bytes.extend_from_slice(chunk);
+        let mut replies = Vec::new();
 
         let mut cursor = 0;
         loop {
             let Some(start_offset) = self.pending_bytes[cursor..]
-                .windows(KITTY_APC_START.len())
-                .position(|window| window == KITTY_APC_START)
+                .windows(APC_START.len())
+                .position(|window| window == APC_START)
             else {
                 if cursor < self.pending_bytes.len() {
                     parser.process(&self.pending_bytes[cursor..]);
                 }
                 self.pending_bytes.clear();
-                return;
+                return replies;
             };
             let start = cursor + start_offset;
             if cursor < start {
                 parser.process(&self.pending_bytes[cursor..start]);
             }
 
-            let payload_start = start + KITTY_APC_START.len();
+            let payload_start = start + APC_START.len();
             let Some(end) = ({
                 let mut index = payload_start;
                 loop {
@@ -67,10 +73,14 @@ impl TerminalInlineObjects {
                 }
             }) else {
                 self.pending_bytes.drain(..start);
-                return;
+                return replies;
             };
             let sequence = self.pending_bytes[start..end].to_vec();
-            if !self.handle_kitty_sequence(&sequence, parser.screen().cursor_position()) {
+            let (handled, reply) = self.handle_apc_sequence(&sequence, parser.screen().cursor_position());
+            if let Some(reply) = reply {
+                replies.push(reply);
+            }
+            if !handled {
                 parser.process(&sequence);
             }
             cursor = end;
@@ -120,46 +130,69 @@ impl TerminalInlineObjects {
         }
     }
 
-    fn handle_kitty_sequence(
+    fn handle_apc_sequence(
         &mut self,
         sequence: &[u8],
         cursor_position: (u16, u16),
-    ) -> bool {
+    ) -> (bool, Option<Vec<u8>>) {
+        if let Some(reply) = self.handle_rgp_sequence(sequence) {
+            return (true, reply);
+        }
+
         let Some(operation) = self
             .kitty
-            .consume_sequence(sequence, cursor_position, self.next_object_id.max(1))
+            .consume_sequence(sequence, cursor_position)
         else {
-            return false;
+            return (false, None);
         };
 
         match operation {
-            KittyOperation::Pending | KittyOperation::Ignored => true,
+            KittyOperation::Pending | KittyOperation::Ignored => (true, None),
             KittyOperation::TransmitOnly { object_id, image } => {
-                self.next_object_id = self.next_object_id.max(object_id + 1);
                 self.objects
                     .insert(object_id, InlineObject::KittyImage(image.rasterize()));
                 self.dirty = true;
-                true
+                (true, None)
             }
             KittyOperation::TransmitAndPlace {
                 object_id,
                 image,
                 anchor,
             } => {
-                self.next_object_id = self.next_object_id.max(object_id + 1);
-                self.remove_objects_at(&InlineAnchor::from(anchor));
+                self.remove_objects_at(&InlineAnchor {
+                    row: anchor.row,
+                    col: anchor.col,
+                    columns: anchor.columns,
+                    rows: anchor.rows,
+                });
                 self.objects
                     .insert(object_id, InlineObject::KittyImage(image.rasterize()));
-                self.anchors.insert(object_id, InlineAnchor::from(anchor));
+                self.anchors.insert(
+                    object_id,
+                    InlineAnchor {
+                        row: anchor.row,
+                        col: anchor.col,
+                        columns: anchor.columns,
+                        rows: anchor.rows,
+                    },
+                );
                 self.dirty = true;
-                true
+                (true, None)
             }
             KittyOperation::PlaceExisting { object_id, anchor } => {
                 if self.objects.contains_key(&object_id) {
-                    self.anchors.insert(object_id, InlineAnchor::from(anchor));
+                    self.anchors.insert(
+                        object_id,
+                        InlineAnchor {
+                            row: anchor.row,
+                            col: anchor.col,
+                            columns: anchor.columns,
+                            rows: anchor.rows,
+                        },
+                    );
                     self.dirty = true;
                 }
-                true
+                (true, None)
             }
             KittyOperation::Delete { object_id } => {
                 if let Some(object_id) = object_id {
@@ -170,9 +203,76 @@ impl TerminalInlineObjects {
                     self.anchors.clear();
                 }
                 self.dirty = true;
-                true
+                (true, None)
             }
         }
+    }
+
+    fn handle_rgp_sequence(&mut self, sequence: &[u8]) -> Option<Option<Vec<u8>>> {
+        let operation = consume_rgp_sequence(sequence)?;
+        Some(match operation {
+            RgpOperation::SupportQuery => Some(support_reply()),
+            RgpOperation::Register {
+                object_id,
+                format,
+                path,
+            } => {
+                if format != "obj" {
+                    Some(register_reply(object_id, 1))
+                } else {
+                    match load_object_meshes(Path::new(&path)) {
+                        Ok((source, meshes)) => {
+                            info!(
+                                "loaded RGP object {} from {} ({} mesh parts)",
+                                object_id,
+                                source,
+                                meshes.len()
+                            );
+                            self.objects.insert(
+                                object_id,
+                                InlineObject::RgpObject(RgpInlineObject {
+                                    meshes,
+                                    handles: None,
+                                }),
+                            );
+                            self.dirty = true;
+                            Some(register_reply(object_id, 0))
+                        }
+                        Err(error) => {
+                            warn!("failed to load RGP object {object_id}: {error:#}");
+                            Some(register_reply(object_id, 4))
+                        }
+                    }
+                }
+            }
+            RgpOperation::Place { object_id, anchor } => {
+                if self.objects.contains_key(&object_id) {
+                    self.anchors.insert(
+                        object_id,
+                        InlineAnchor {
+                            row: anchor.row,
+                            col: anchor.col,
+                            columns: anchor.columns,
+                            rows: anchor.rows,
+                        },
+                    );
+                    self.dirty = true;
+                }
+                None
+            }
+            RgpOperation::Delete { object_id } => {
+                if let Some(object_id) = object_id {
+                    self.objects.remove(&object_id);
+                    self.anchors.remove(&object_id);
+                } else {
+                    self.objects.clear();
+                    self.anchors.clear();
+                }
+                self.dirty = true;
+                None
+            }
+            RgpOperation::Ignored => None,
+        })
     }
 
     fn remove_objects_at(&mut self, new_anchor: &InlineAnchor) {
@@ -207,6 +307,7 @@ impl TerminalInlineObjects {
 
 pub enum InlineObject {
     KittyImage(KittyInlineObject),
+    RgpObject(RgpInlineObject),
 }
 
 pub struct RasterObject {
@@ -221,10 +322,16 @@ pub struct KittyInlineObject {
     pub uses_placeholders: bool,
 }
 
+pub struct RgpInlineObject {
+    pub meshes: Vec<Mesh>,
+    pub handles: Option<Vec<Handle<Mesh>>>,
+}
+
 impl InlineObject {
     fn scrolls_with_text(&self) -> bool {
         match self {
             InlineObject::KittyImage(object) => !object.uses_placeholders,
+            InlineObject::RgpObject(_) => true,
         }
     }
 }
@@ -234,15 +341,4 @@ pub struct InlineAnchor {
     pub col: u16,
     pub columns: u32,
     pub rows: u32,
-}
-
-impl From<KittyAnchor> for InlineAnchor {
-    fn from(anchor: KittyAnchor) -> Self {
-        Self {
-            row: anchor.row,
-            col: anchor.col,
-            columns: anchor.columns,
-            rows: anchor.rows,
-        }
-    }
 }

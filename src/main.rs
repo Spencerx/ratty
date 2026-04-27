@@ -6,6 +6,7 @@ mod model;
 mod mouse;
 mod plugin;
 mod rendering;
+mod rgp;
 mod runtime;
 mod scene;
 mod systems;

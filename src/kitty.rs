@@ -11,6 +11,7 @@ const C1_ST: u8 = 0x9c;
 #[derive(Default)]
 pub struct KittyParserState {
     transfer: Option<KittyTransfer>,
+    next_object_id: u32,
 }
 
 impl KittyParserState {
@@ -18,7 +19,6 @@ impl KittyParserState {
         &mut self,
         sequence: &[u8],
         cursor_position: (u16, u16),
-        next_object_id: u32,
     ) -> Option<KittyOperation> {
         if !sequence.starts_with(KITTY_APC_START) {
             return None;
@@ -54,12 +54,14 @@ impl KittyParserState {
                     || params.contains_key("v")
                     || params.contains_key("i");
                 if starts_new_transfer {
+                    let object_id = params
+                        .get("i")
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or(self.next_object_id.max(1));
+                    self.next_object_id = self.next_object_id.max(object_id + 1);
                     self.transfer = Some(KittyTransfer {
                         action: action.to_owned(),
-                        object_id: params
-                            .get("i")
-                            .and_then(|value| value.parse().ok())
-                            .unwrap_or(next_object_id),
+                        object_id,
                         format: params
                             .get("f")
                             .and_then(|value| value.parse().ok())
@@ -241,6 +243,7 @@ pub fn refresh_kitty_placeholder_anchors(
         .iter()
         .filter_map(|(object_id, object)| match object {
             InlineObject::KittyImage(object) => object.uses_placeholders.then_some(*object_id),
+            InlineObject::RgpObject(_) => None,
         })
         .collect::<Vec<_>>();
     if placeholder_ids.is_empty() {

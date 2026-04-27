@@ -13,6 +13,7 @@ use bevy::window::{PrimaryWindow, WindowResized};
 use crate::config::{AppConfig, CURSOR_DEPTH};
 use crate::inline::{
     InlineObject, TerminalInlineObjectPlane, TerminalInlineObjectSprite, TerminalInlineObjects,
+    TerminalRgpObject,
 };
 use crate::model::CursorModel;
 use crate::model::spawn_cursor_model;
@@ -24,6 +25,19 @@ use crate::scene::{
     TerminalPresentation, TerminalPresentationMode, TerminalSprite, TerminalViewport,
 };
 use crate::terminal::{TerminalRedrawState, TerminalSurface, TerminalWidget};
+
+struct InlineLayout {
+    columns: u32,
+    rows: u32,
+    center_x: f32,
+    center_y: f32,
+    local_x: f32,
+    local_y: f32,
+    local_width: f32,
+    local_height: f32,
+    pixel_width: f32,
+    pixel_height: f32,
+}
 
 pub fn pump_pty_output(
     mut runtime: NonSendMut<TerminalRuntime>,
@@ -47,7 +61,10 @@ pub fn pump_pty_output(
                 } else {
                     None
                 };
-                inline_objects.consume_pty_output(&chunk, &mut runtime.parser);
+                let replies = inline_objects.consume_pty_output(&chunk, &mut runtime.parser);
+                for reply in replies {
+                    runtime.write_input(&reply);
+                }
                 if let Some(prev_rows) = prev_rows {
                     let (_, cols) = runtime.parser.screen().size();
                     let next_rows = runtime.parser.screen().rows(0, cols).collect::<Vec<_>>();
@@ -96,9 +113,10 @@ pub fn sync_inline_objects(
     presentation: Res<TerminalPresentation>,
     plane_warp: Res<TerminalPlaneWarp>,
     time: Res<Time>,
-    plane_query: Query<Entity, With<TerminalPlane>>,
+    plane_query: Query<(Entity, &Transform), With<TerminalPlane>>,
     sprite_query: Query<Entity, With<TerminalInlineObjectSprite>>,
     plane_image_query: Query<Entity, With<TerminalInlineObjectPlane>>,
+    rgp_query: Query<Entity, With<TerminalRgpObject>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -116,8 +134,11 @@ pub fn sync_inline_objects(
     for entity in &plane_image_query {
         commands.entity(entity).despawn();
     }
+    for entity in &rgp_query {
+        commands.entity(entity).despawn();
+    }
 
-    let Ok(plane_entity) = plane_query.single() else {
+    let Ok((plane_entity, _plane_transform)) = plane_query.single() else {
         return;
     };
 
@@ -137,109 +158,164 @@ pub fn sync_inline_objects(
 
     let mut plane_children = Vec::new();
     for object_id in renderable_ids {
-        let image_handle = {
-            let object = inline_objects
-                .objects
-                .get_mut(&object_id)
-                .expect("inline object should exist");
-            match object {
-                InlineObject::KittyImage(object) => {
-                    if let Some(handle) = object.raster.handle.as_ref() {
-                        handle.clone()
-                    } else {
-                        let mut image = Image::new_fill(
-                            Extent3d {
-                                width: object.raster.width,
-                                height: object.raster.height,
-                                depth_or_array_layers: 1,
-                            },
-                            TextureDimension::D2,
-                            &[0, 0, 0, 0],
-                            TextureFormat::Rgba8UnormSrgb,
-                            bevy::asset::RenderAssetUsages::default(),
-                        );
-                        image.sampler = ImageSampler::nearest();
-                        image.data = Some(object.raster.rgba.clone());
-                        let handle = images.add(image);
-                        object.raster.handle = Some(handle.clone());
-                        handle
-                    }
-                }
-            }
-        };
         let anchor = inline_objects
             .anchors
             .get(&object_id)
             .expect("inline object anchor should exist");
-        let columns = anchor.columns;
-        let rows = anchor.rows;
-        let sprite_size = Vec2::new(columns as f32 * cell_width, rows as f32 * cell_height);
-        let center_x = viewport.center.x - viewport.size.x * 0.5
-            + (anchor.col as f32 + columns as f32 * 0.5) * cell_width;
-        let center_y = viewport.center.y + viewport.size.y * 0.5
-            - (anchor.row as f32 + rows as f32 * 0.5) * cell_height;
+        let layout = inline_layout(anchor, &terminal, &viewport, cell_width, cell_height);
+        match inline_objects
+            .objects
+            .get_mut(&object_id)
+            .expect("inline object should exist")
+        {
+            InlineObject::KittyImage(object) => {
+                sync_kitty_inline_image(
+                    &mut commands,
+                    object,
+                    &layout,
+                    presentation.mode,
+                    plane_warp.amount,
+                    elapsed_secs,
+                    &mut materials,
+                    &mut images,
+                    &mut meshes,
+                    &mut plane_children,
+                );
+            }
+            InlineObject::RgpObject(object) => {
+                spawn_rgp_object(&mut commands, object_id, object, &mut materials, &mut meshes);
+            }
+        }
+    }
 
-        let mut sprite = Sprite::from_image(image_handle.clone());
-        sprite.custom_size = Some(sprite_size);
-        commands.spawn((
-            TerminalInlineObjectSprite,
-            sprite,
-            Transform::from_translation(Vec3::new(center_x, center_y, 5.0)),
-            match presentation.mode {
-                TerminalPresentationMode::Flat2d => Visibility::Visible,
-                TerminalPresentationMode::Plane3d => Visibility::Hidden,
+    if !plane_children.is_empty() {
+        commands.entity(plane_entity).add_children(&plane_children);
+    }
+
+    inline_objects.finish_sync(viewport.size, terminal.cols, terminal.rows);
+}
+
+fn inline_layout(
+    anchor: &crate::inline::InlineAnchor,
+    terminal: &TerminalSurface,
+    viewport: &TerminalViewport,
+    cell_width: f32,
+    cell_height: f32,
+) -> InlineLayout {
+    let cols = terminal.cols.max(1) as f32;
+    let rows = terminal.rows.max(1) as f32;
+    let center_x = viewport.center.x - viewport.size.x * 0.5
+        + (anchor.col as f32 + anchor.columns as f32 * 0.5) * cell_width;
+    let center_y = viewport.center.y + viewport.size.y * 0.5
+        - (anchor.row as f32 + anchor.rows as f32 * 0.5) * cell_height;
+
+    InlineLayout {
+        columns: anchor.columns,
+        rows: anchor.rows,
+        center_x,
+        center_y,
+        local_x: (anchor.col as f32 + anchor.columns as f32 * 0.5) / cols - 0.5,
+        local_y: 0.5 - (anchor.row as f32 + anchor.rows as f32 * 0.5) / rows,
+        local_width: anchor.columns as f32 / cols,
+        local_height: anchor.rows as f32 / rows,
+        pixel_width: anchor.columns as f32 * cell_width,
+        pixel_height: anchor.rows as f32 * cell_height,
+    }
+}
+
+fn sync_kitty_inline_image(
+    commands: &mut Commands,
+    object: &mut crate::inline::KittyInlineObject,
+    layout: &InlineLayout,
+    mode: TerminalPresentationMode,
+    warp_amount: f32,
+    elapsed_secs: f32,
+    materials: &mut Assets<StandardMaterial>,
+    images: &mut Assets<Image>,
+    meshes: &mut Assets<Mesh>,
+    plane_children: &mut Vec<Entity>,
+) {
+    let image_handle = if let Some(handle) = object.raster.handle.as_ref() {
+        handle.clone()
+    } else {
+        let mut image = Image::new_fill(
+            Extent3d {
+                width: object.raster.width,
+                height: object.raster.height,
+                depth_or_array_layers: 1,
             },
-        ));
-
-        let local_width = columns as f32 / terminal.cols.max(1) as f32;
-        let local_height = rows as f32 / terminal.rows.max(1) as f32;
-        let local_x = (anchor.col as f32 + columns as f32 * 0.5) / terminal.cols.max(1) as f32
-            - 0.5;
-        let local_y = 0.5 - (anchor.row as f32 + rows as f32 * 0.5) / terminal.rows.max(1) as f32;
-        let x_segments = columns.clamp(2, 24);
-        let y_segments = rows.clamp(2, 24);
-        let vertex_count = ((x_segments + 1) * (y_segments + 1)) as usize;
-        let mut positions = Vec::with_capacity(vertex_count);
-        let mut normals = Vec::with_capacity(vertex_count);
-        let mut uvs = Vec::with_capacity(vertex_count);
-        let mut indices = Vec::with_capacity((x_segments * y_segments * 6) as usize);
-
-        for y in 0..=y_segments {
-            let v = y as f32 / y_segments as f32;
-            let py = local_y + (0.5 - v) * local_height;
-            for x in 0..=x_segments {
-                let u = x as f32 / x_segments as f32;
-                let px = local_x + (u - 0.5) * local_width;
-                positions.push([
-                    px,
-                    py,
-                    plane_surface_z(px, py, plane_warp.amount, elapsed_secs) + 1.5,
-                ]);
-                normals.push([0.0, 0.0, 1.0]);
-                uvs.push([u, v]);
-            }
-        }
-
-        for y in 0..y_segments {
-            for x in 0..x_segments {
-                let row = y * (x_segments + 1);
-                let next_row = (y + 1) * (x_segments + 1);
-                let i0 = row + x;
-                let i1 = i0 + 1;
-                let i2 = next_row + x;
-                let i3 = i2 + 1;
-                indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
-            }
-        }
-
-        let mesh = meshes.add(
-            Mesh::new(PrimitiveTopology::TriangleList, bevy::asset::RenderAssetUsages::default())
-                .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-                .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
-                .with_inserted_indices(Indices::U32(indices)),
+            TextureDimension::D2,
+            &[0, 0, 0, 0],
+            TextureFormat::Rgba8UnormSrgb,
+            bevy::asset::RenderAssetUsages::default(),
         );
-        let plane_child = commands
+        image.sampler = ImageSampler::nearest();
+        image.data = Some(object.raster.rgba.clone());
+        let handle = images.add(image);
+        object.raster.handle = Some(handle.clone());
+        handle
+    };
+
+    let mut sprite = Sprite::from_image(image_handle.clone());
+    sprite.custom_size = Some(Vec2::new(layout.pixel_width, layout.pixel_height));
+    commands.spawn((
+        TerminalInlineObjectSprite,
+        sprite,
+        Transform::from_translation(Vec3::new(layout.center_x, layout.center_y, 5.0)),
+        match mode {
+            TerminalPresentationMode::Flat2d => Visibility::Visible,
+            TerminalPresentationMode::Plane3d => Visibility::Hidden,
+        },
+    ));
+
+    let x_segments = layout.columns.clamp(2, 24);
+    let y_segments = layout.rows.clamp(2, 24);
+    let vertex_count = ((x_segments + 1) * (y_segments + 1)) as usize;
+    let mut positions = Vec::with_capacity(vertex_count);
+    let mut normals = Vec::with_capacity(vertex_count);
+    let mut uvs = Vec::with_capacity(vertex_count);
+    let mut indices = Vec::with_capacity((x_segments * y_segments * 6) as usize);
+
+    for y in 0..=y_segments {
+        let v = y as f32 / y_segments as f32;
+        let py = layout.local_y + (0.5 - v) * layout.local_height;
+        for x in 0..=x_segments {
+            let u = x as f32 / x_segments as f32;
+            let px = layout.local_x + (u - 0.5) * layout.local_width;
+            positions.push([
+                px,
+                py,
+                plane_surface_z(px, py, warp_amount, elapsed_secs) + 1.5,
+            ]);
+            normals.push([0.0, 0.0, 1.0]);
+            uvs.push([u, v]);
+        }
+    }
+
+    for y in 0..y_segments {
+        for x in 0..x_segments {
+            let row = y * (x_segments + 1);
+            let next_row = (y + 1) * (x_segments + 1);
+            let i0 = row + x;
+            let i1 = i0 + 1;
+            let i2 = next_row + x;
+            let i3 = i2 + 1;
+            indices.extend_from_slice(&[i0, i2, i1, i1, i2, i3]);
+        }
+    }
+
+    let mesh = meshes.add(
+        Mesh::new(
+            PrimitiveTopology::TriangleList,
+            bevy::asset::RenderAssetUsages::default(),
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
+        .with_inserted_indices(Indices::U32(indices)),
+    );
+    plane_children.push(
+        commands
             .spawn((
                 TerminalInlineObjectPlane,
                 Mesh3d(mesh),
@@ -252,28 +328,130 @@ pub fn sync_inline_objects(
                 })),
                 Transform::default(),
             ))
-            .id();
-        plane_children.push(plane_child);
-    }
+            .id(),
+    );
+}
 
-    if !plane_children.is_empty() {
-        commands.entity(plane_entity).add_children(&plane_children);
-    }
-
-    inline_objects.finish_sync(viewport.size, terminal.cols, terminal.rows);
+fn spawn_rgp_object(
+    commands: &mut Commands,
+    object_id: u32,
+    object: &mut crate::inline::RgpInlineObject,
+    materials: &mut Assets<StandardMaterial>,
+    meshes: &mut Assets<Mesh>,
+) {
+    let handles = if let Some(handles) = object.handles.as_ref() {
+        handles.clone()
+    } else {
+        let handles = object
+            .meshes
+            .iter()
+            .cloned()
+            .map(|mesh| meshes.add(mesh))
+            .collect::<Vec<_>>();
+        object.handles = Some(handles.clone());
+        handles
+    };
+    let material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        emissive: LinearRgba::rgb(0.35, 0.35, 0.35),
+        metallic: 0.0,
+        perceptual_roughness: 0.28,
+        reflectance: 0.6,
+        cull_mode: None,
+        ..default()
+    });
+    let root = commands
+        .spawn((
+            TerminalRgpObject { object_id },
+            Transform::default(),
+            Visibility::Visible,
+        ))
+        .id();
+    let children = handles
+        .into_iter()
+        .map(|handle| {
+            commands
+                .spawn((
+                    Mesh3d(handle),
+                    MeshMaterial3d(material.clone()),
+                    Transform::default(),
+                ))
+                .id()
+        })
+        .collect::<Vec<_>>();
+    commands.entity(root).add_children(&children);
 }
 
 pub fn apply_inline_objects(
     presentation: Res<TerminalPresentation>,
     mut sprite_query: Query<&mut Visibility, With<TerminalInlineObjectSprite>>,
+    mut plane_query: Query<&mut Visibility, (With<TerminalInlineObjectPlane>, Without<TerminalInlineObjectSprite>)>,
 ) {
-    let visibility = match presentation.mode {
+    let sprite_visibility = match presentation.mode {
         TerminalPresentationMode::Flat2d => Visibility::Visible,
         TerminalPresentationMode::Plane3d => Visibility::Hidden,
     };
+    let plane_visibility = match presentation.mode {
+        TerminalPresentationMode::Flat2d => Visibility::Hidden,
+        TerminalPresentationMode::Plane3d => Visibility::Visible,
+    };
 
-    for mut sprite_visibility in &mut sprite_query {
-        *sprite_visibility = visibility;
+    for mut visibility in &mut sprite_query {
+        *visibility = sprite_visibility;
+    }
+    for mut visibility in &mut plane_query {
+        *visibility = plane_visibility;
+    }
+}
+
+pub fn sync_rgp_objects(
+    terminal: NonSend<TerminalSurface>,
+    viewport: Res<TerminalViewport>,
+    presentation: Res<TerminalPresentation>,
+    plane_warp: Res<TerminalPlaneWarp>,
+    time: Res<Time>,
+    plane_query: Query<&Transform, (With<TerminalPlane>, Without<TerminalRgpObject>)>,
+    inline_objects: Res<TerminalInlineObjects>,
+    mut query: Query<(&TerminalRgpObject, &mut Transform, &mut Visibility)>,
+) {
+    let cell_width = viewport.size.x / terminal.cols.max(1) as f32;
+    let cell_height = viewport.size.y / terminal.rows.max(1) as f32;
+    let elapsed_secs = time.elapsed_secs();
+
+    for (object, mut transform, mut visibility) in &mut query {
+        let Some(anchor) = inline_objects.anchors.get(&object.object_id) else {
+            *visibility = Visibility::Hidden;
+            continue;
+        };
+        let layout = inline_layout(anchor, &terminal, &viewport, cell_width, cell_height);
+        let scale = layout.pixel_width.max(layout.pixel_height).max(1.0) * 0.9;
+
+        match presentation.mode {
+            TerminalPresentationMode::Flat2d => {
+                transform.translation = Vec3::new(layout.center_x, layout.center_y, CURSOR_DEPTH);
+                transform.rotation = Quat::IDENTITY;
+                transform.scale = Vec3::splat(scale);
+                *visibility = Visibility::Visible;
+            }
+            TerminalPresentationMode::Plane3d => {
+                let Ok(plane_transform) = plane_query.single() else {
+                    *visibility = Visibility::Hidden;
+                    continue;
+                };
+                let local_z =
+                    plane_surface_z(layout.local_x, layout.local_y, plane_warp.amount, elapsed_secs)
+                        + 8.0;
+                transform.translation =
+                    plane_transform.transform_point(Vec3::new(
+                        layout.local_x,
+                        layout.local_y,
+                        local_z,
+                    ));
+                transform.rotation = plane_transform.rotation;
+                transform.scale = Vec3::splat(scale);
+                *visibility = Visibility::Visible;
+            }
+        }
     }
 }
 

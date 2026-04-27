@@ -39,23 +39,8 @@ pub fn spawn_cursor_model(
         ..default()
     });
 
-    let configured_path = app_config.cursor.model.path.as_path();
-    let maybe_meshes = if let Some(file_name) = configured_path.file_name().and_then(|name| name.to_str())
-        && let Some(file) = EmbeddedObjects::get(file_name)
-    {
-        Some(
-            load_obj_meshes_from_bytes(file_name, &file.data)
-                .map(|meshes| (format!("embedded:{file_name}"), meshes)),
-        )
-    } else {
-        Some(
-            load_obj_meshes_from_path(configured_path)
-                .map(|meshes| (configured_path.display().to_string(), meshes)),
-        )
-    };
-
-    match maybe_meshes {
-        Some(Ok((source, loaded_meshes))) if !loaded_meshes.is_empty() => {
+    match load_object_meshes(app_config.cursor.model.path.as_path()) {
+        Ok((source, loaded_meshes)) if !loaded_meshes.is_empty() => {
             info!(
                 "loaded cursor model from {} ({} mesh parts)",
                 source,
@@ -71,7 +56,7 @@ pub fn spawn_cursor_model(
                 }
             });
         }
-        Some(Err(error)) => {
+        Err(error) => {
             warn!("failed to load cursor OBJ model: {error:#}");
             commands.entity(root).with_children(|parent| {
                 parent.spawn((
@@ -90,6 +75,17 @@ pub fn spawn_cursor_model(
             });
         }
     }
+}
+
+pub fn load_object_meshes(path: &Path) -> anyhow::Result<(String, Vec<Mesh>)> {
+    if let Some(file_name) = path.file_name().and_then(|name| name.to_str())
+        && let Some(file) = EmbeddedObjects::get(file_name)
+    {
+        return load_obj_meshes_from_bytes(file_name, &file.data)
+            .map(|meshes| (format!("embedded:{file_name}"), meshes));
+    }
+
+    load_obj_meshes_from_path(path).map(|meshes| (path.display().to_string(), meshes))
 }
 
 fn load_obj_meshes_from_path(path: &Path) -> anyhow::Result<Vec<Mesh>> {
