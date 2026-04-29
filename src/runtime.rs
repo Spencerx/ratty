@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::io::{ErrorKind, Read, Write};
 use std::sync::mpsc::{self, Receiver};
@@ -6,16 +7,78 @@ use std::thread;
 
 use anyhow::Context;
 use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
-use vt100::Parser;
+use vt100::{Callbacks, Parser, Screen};
 
 use crate::config::AppConfig;
+
+#[derive(Default)]
+pub struct TerminalParserCallbacks {
+    seen_csi: HashSet<String>,
+    seen_escape: HashSet<String>,
+}
+
+impl Callbacks for TerminalParserCallbacks {
+    fn unhandled_csi(
+        &mut self,
+        _: &mut Screen,
+        i1: Option<u8>,
+        i2: Option<u8>,
+        params: &[&[u16]],
+        c: char,
+    ) {
+        let mut sequence = String::from("\u{1b}[");
+        if let Some(i1) = i1 {
+            sequence.push(i1 as char);
+        }
+        if let Some(i2) = i2 {
+            sequence.push(i2 as char);
+        }
+        for (idx, param) in params.iter().enumerate() {
+            if idx > 0 {
+                sequence.push(';');
+            }
+            for (j, value) in param.iter().enumerate() {
+                if j > 0 {
+                    sequence.push(':');
+                }
+                sequence.push_str(&value.to_string());
+            }
+        }
+        sequence.push(c);
+
+        if self.seen_csi.insert(sequence.clone()) {
+            bevy::log::warn!("unhandled terminal CSI sequence: {sequence}");
+        }
+    }
+
+    fn unhandled_escape(
+        &mut self,
+        _: &mut Screen,
+        i1: Option<u8>,
+        i2: Option<u8>,
+        b: u8,
+    ) {
+        let mut sequence = String::from("\u{1b}");
+        if let Some(i1) = i1 {
+            sequence.push(i1 as char);
+        }
+        if let Some(i2) = i2 {
+            sequence.push(i2 as char);
+        }
+        sequence.push(b as char);
+
+        if self.seen_escape.insert(sequence.clone()) {
+            bevy::log::warn!("unhandled terminal escape sequence: {sequence}");
+        }
+    }
+}
 
 pub struct TerminalRuntime {
     pub rx: Receiver<Vec<u8>>,
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     pub _master: Box<dyn MasterPty + Send>,
     pub _child: Box<dyn portable_pty::Child + Send + Sync>,
-    pub parser: Parser,
+    pub parser: Parser<TerminalParserCallbacks>,
     pub pty_disconnected: bool,
 }
 
@@ -86,7 +149,12 @@ impl TerminalRuntime {
             writer: Arc::new(Mutex::new(writer)),
             _master: pair.master,
             _child: child,
-            parser: Parser::new(rows, cols, config.terminal.scrollback),
+            parser: Parser::new_with_callbacks(
+                rows,
+                cols,
+                config.terminal.scrollback,
+                TerminalParserCallbacks::default(),
+            ),
             pty_disconnected: false,
         })
     }

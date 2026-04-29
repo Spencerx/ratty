@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use bevy::prelude::*;
+use vt100::Callbacks;
 
 use crate::kitty::{KittyOperation, KittyParserState, refresh_kitty_placeholder_anchors};
 use crate::model::{ObjectSource, load_object_source};
@@ -36,7 +37,11 @@ pub struct TerminalInlineObjects {
 }
 
 impl TerminalInlineObjects {
-    pub fn consume_pty_output(&mut self, chunk: &[u8], parser: &mut vt100::Parser) -> Vec<Vec<u8>> {
+    pub fn consume_pty_output<CB: Callbacks>(
+        &mut self,
+        chunk: &[u8],
+        parser: &mut vt100::Parser<CB>,
+    ) -> Vec<Vec<u8>> {
         self.pending_bytes.extend_from_slice(chunk);
         let mut replies = Vec::new();
 
@@ -47,14 +52,14 @@ impl TerminalInlineObjects {
                 .position(|window| window == APC_START)
             else {
                 if cursor < self.pending_bytes.len() {
-                    parser.process(&self.pending_bytes[cursor..]);
+                    parser.process(&normalize_hvp_sequences(&self.pending_bytes[cursor..]));
                 }
                 self.pending_bytes.clear();
                 return replies;
             };
             let start = cursor + start_offset;
             if cursor < start {
-                parser.process(&self.pending_bytes[cursor..start]);
+                parser.process(&normalize_hvp_sequences(&self.pending_bytes[cursor..start]));
             }
 
             let payload_start = start + APC_START.len();
@@ -308,6 +313,33 @@ impl TerminalInlineObjects {
             self.anchors.remove(&object_id);
         }
     }
+}
+
+fn normalize_hvp_sequences(bytes: &[u8]) -> Vec<u8> {
+    // vt100 handles CUP (`H`) but not HVP (`f`), so normalize cursor-positioning sequences.
+    let mut normalized = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+
+    while i < bytes.len() {
+        if bytes[i] == 0x1b && i + 2 < bytes.len() && bytes[i + 1] == b'[' {
+            let mut j = i + 2;
+            while j < bytes.len() && matches!(bytes[j], b'0'..=b'9' | b';') {
+                j += 1;
+            }
+
+            if j < bytes.len() && bytes[j] == b'f' && j > i + 2 {
+                normalized.extend_from_slice(&bytes[i..j]);
+                normalized.push(b'H');
+                i = j + 1;
+                continue;
+            }
+        }
+
+        normalized.push(bytes[i]);
+        i += 1;
+    }
+
+    normalized
 }
 
 fn apc_end(bytes: &[u8], payload_start: usize) -> Option<usize> {
