@@ -167,7 +167,11 @@ pub struct TerminalKeyboard {
 }
 
 impl TerminalKeyboard {
-    pub fn handle_event(&mut self, event: &KeyboardInput) -> Option<Vec<u8>> {
+    pub fn handle_event_with_modes(
+        &mut self,
+        event: &KeyboardInput,
+        application_cursor: bool,
+    ) -> Option<Vec<u8>> {
         match event.key_code {
             KeyCode::ControlLeft | KeyCode::ControlRight => {
                 self.ctrl_pressed = event.state == ButtonState::Pressed;
@@ -198,6 +202,7 @@ impl TerminalKeyboard {
             event.text.as_deref(),
             self.ctrl_pressed,
             self.alt_pressed,
+            application_cursor,
         ))
     }
 
@@ -310,7 +315,9 @@ pub fn handle_keyboard_input(
             redraw.request();
         }
 
-        if let Some(input) = keyboard.handle_event(event) {
+        if let Some(input) =
+            keyboard.handle_event_with_modes(event, runtime.parser.screen().application_cursor())
+        {
             runtime.write_input(&input);
         }
     }
@@ -409,6 +416,7 @@ fn translate_key(
     text: Option<&str>,
     ctrl_pressed: bool,
     alt_pressed: bool,
+    application_cursor: bool,
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
 
@@ -435,6 +443,8 @@ fn translate_key(
         KeyCode::ArrowUp => {
             if ctrl_pressed {
                 bytes.extend_from_slice(b"\x1b[1;5A");
+            } else if application_cursor {
+                bytes.extend_from_slice(b"\x1bOA");
             } else {
                 bytes.extend_from_slice(b"\x1b[A");
             }
@@ -442,6 +452,8 @@ fn translate_key(
         KeyCode::ArrowDown => {
             if ctrl_pressed {
                 bytes.extend_from_slice(b"\x1b[1;5B");
+            } else if application_cursor {
+                bytes.extend_from_slice(b"\x1bOB");
             } else {
                 bytes.extend_from_slice(b"\x1b[B");
             }
@@ -449,6 +461,8 @@ fn translate_key(
         KeyCode::ArrowRight => {
             if ctrl_pressed {
                 bytes.extend_from_slice(b"\x1b[1;5C");
+            } else if application_cursor {
+                bytes.extend_from_slice(b"\x1bOC");
             } else {
                 bytes.extend_from_slice(b"\x1b[C");
             }
@@ -456,13 +470,27 @@ fn translate_key(
         KeyCode::ArrowLeft => {
             if ctrl_pressed {
                 bytes.extend_from_slice(b"\x1b[1;5D");
+            } else if application_cursor {
+                bytes.extend_from_slice(b"\x1bOD");
             } else {
                 bytes.extend_from_slice(b"\x1b[D");
             }
         }
         KeyCode::Delete => bytes.extend_from_slice(b"\x1b[3~"),
-        KeyCode::Home => bytes.extend_from_slice(b"\x1b[H"),
-        KeyCode::End => bytes.extend_from_slice(b"\x1b[F"),
+        KeyCode::Home => {
+            if application_cursor {
+                bytes.extend_from_slice(b"\x1bOH");
+            } else {
+                bytes.extend_from_slice(b"\x1b[H");
+            }
+        }
+        KeyCode::End => {
+            if application_cursor {
+                bytes.extend_from_slice(b"\x1bOF");
+            } else {
+                bytes.extend_from_slice(b"\x1b[F");
+            }
+        }
         KeyCode::PageUp => bytes.extend_from_slice(b"\x1b[5~"),
         KeyCode::PageDown => bytes.extend_from_slice(b"\x1b[6~"),
         _ => {
