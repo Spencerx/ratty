@@ -14,8 +14,6 @@ Features:
 - Image support via Kitty Graphics Protocol
 - GPU-backed text rendering with Ratatui + Parley/Vello [\*](#rendering-pipeline)
 
-[**Sponsor the development of ratty!**](https://github.com/sponsors/orhun/)
-
 ## Rendering pipeline
 
 The terminal surface currently uses [`ratatui`](https://github.com/ratatui/ratatui) for the UI buffer,
