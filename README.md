@@ -164,7 +164,11 @@ Bevy's render-world device instead of using the current readback bridge.
 
 All code is licensed under <a href="LICENSE">The MIT License</a>.
 
-<br>
+🦀 ノ( º \_ º ノ) - respect crables!
+
+## Copyright
+
+Copyright © 2025, [Orhun Parmaksız](mailto:orhunparmaksiz@gmail.com)
 
 <small>
 The author does not have a rat under the hat 🐁

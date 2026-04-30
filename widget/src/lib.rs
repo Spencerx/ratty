@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::Path;
