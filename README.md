@@ -7,7 +7,7 @@
 Inspired by TempleOS | Built with Rust & Ratatui
 </sup>
 <br>
-<img src="https://img.shields.io/badge/Built_With-Ratatui-000?logo=ratatui&amp;logoColor=fff&amp;labelColor=201a16&amp;color=ffd970" alt="Built with Ratatui badge">
+<img src="https://img.shields.io/badge/Built_with-Ratatui-000?logo=ratatui&amp;logoColor=fff&amp;labelColor=201a16&amp;color=ffd970" alt="Built with Ratatui badge">
 </p>
 
 <div>
