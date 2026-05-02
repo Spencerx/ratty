@@ -1,3 +1,23 @@
+//! Runtime Bevy systems for terminal presentation.
+//!
+//! These systems are scheduled from [`crate::plugin::TerminalPlugin`] in a mostly linear flow:
+//!
+//! - [`pump_pty_output`]
+//! - [`crate::keyboard::handle_keyboard_input`]
+//! - [`crate::mouse::handle_mouse_input`]
+//! - [`handle_window_resize`]
+//! - [`crate::scene::apply_terminal_presentation`]
+//! - [`apply_inline_objects`]
+//! - [`redraw_soft_terminal`]
+//! - [`sync_inline_objects`]
+//! - [`sync_rgp_objects`]
+//! - [`apply_instance_brightness`]
+//! - [`animate_terminal_plane_warp`]
+//! - [`sync_asset_to_terminal_cursor`]
+//!
+//! The redraw path updates the terminal texture and presentation state first, then the inline
+//! object systems rebuild or reposition scene entities that depend on the terminal grid.
+
 use std::collections::HashMap;
 use std::sync::mpsc::TryRecvError;
 
@@ -60,6 +80,7 @@ struct CursorPoseContext<'a, 'w, 's> {
     plane_query: &'a Query<'w, 's, &'static Transform, (With<TerminalPlane>, Without<CursorModel>)>,
 }
 
+/// Marker for objects that already had instance brightness applied.
 #[derive(Component)]
 pub struct BrightnessAdjusted;
 
@@ -82,6 +103,14 @@ type PlaneBackResizeQuery<'w, 's> = Query<
     ),
 >;
 
+/// Pumps PTY output into the terminal parser.
+///
+/// This runs early in the update schedule, before [`redraw_soft_terminal`]. It drains PTY output
+/// from [`TerminalRuntime`], feeds it through [`TerminalInlineObjects::consume_pty_output`] and
+/// requests a redraw through [`TerminalRedrawState`] when terminal state changed.
+///
+/// It also updates scroll-coupled inline anchors before the redraw and sync passes rebuild the
+/// scene.
 pub fn pump_pty_output(
     mut runtime: NonSendMut<TerminalRuntime>,
     mut inline_objects: ResMut<TerminalInlineObjects>,
@@ -156,7 +185,15 @@ pub(crate) struct ResizeParams<'w, 's> {
     images: ResMut<'w, Assets<Image>>,
 }
 
-pub fn handle_window_resize(
+/// Handles primary window resize events.
+///
+/// This updates both the PTY grid and the rendered scene dimensions. It resizes
+/// [`TerminalRuntime`], [`TerminalSurface`], [`TerminalViewport`], the 2D terminal sprite and the
+/// front and back terminal plane transforms.
+///
+/// The updated terminal image is uploaded immediately so later systems in the same frame see the
+/// new geometry.
+pub(crate) fn handle_window_resize(
     mut resize_events: MessageReader<WindowResized>,
     mut params: ResizeParams,
 ) {
@@ -212,6 +249,11 @@ pub fn handle_window_resize(
     }
 }
 
+/// Applies inline object visibility for the current presentation mode.
+///
+/// This runs after [`crate::scene::apply_terminal_presentation`] and only flips scene visibility.
+/// [`TerminalInlineObjectSprite`] entities are shown in [`TerminalPresentationMode::Flat2d`], while
+/// [`TerminalInlineObjectPlane`] entities are shown in [`TerminalPresentationMode::Plane3d`].
 pub fn apply_inline_objects(
     presentation: Res<TerminalPresentation>,
     mut sprite_query: Query<&mut Visibility, With<TerminalInlineObjectSprite>>,
@@ -240,6 +282,7 @@ pub fn apply_inline_objects(
     }
 }
 
+/// Redraw system parameters.
 #[derive(SystemParam)]
 pub(crate) struct RedrawParams<'w, 's> {
     app_config: Res<'w, AppConfig>,
@@ -260,7 +303,15 @@ pub(crate) struct RedrawParams<'w, 's> {
     asset_server: Res<'w, AssetServer>,
 }
 
-pub fn redraw_soft_terminal(mut params: RedrawParams) {
+/// Redraws the terminal surface.
+///
+/// This runs after [`pump_pty_output`] and [`crate::mouse::handle_mouse_input`]. It redraws the
+/// Ratatui buffer into [`TerminalSurface`], uploads the rendered image, refreshes the debug back
+/// texture and synchronizes the front and back plane materials to the latest terminal images.
+///
+/// On the first successful upload it defers cursor-model spawning to the next frame. After that,
+/// it ensures the cursor model exists so [`sync_asset_to_terminal_cursor`] can position it.
+pub(crate) fn redraw_soft_terminal(mut params: RedrawParams) {
     let RedrawParams {
         app_config,
         runtime,
@@ -324,6 +375,7 @@ pub fn redraw_soft_terminal(mut params: RedrawParams) {
     }
 }
 
+/// Synchronizes Kitty inline objects.
 #[derive(SystemParam)]
 pub(crate) struct SyncInlineParams<'w, 's> {
     commands: Commands<'w, 's>,
@@ -343,7 +395,15 @@ pub(crate) struct SyncInlineParams<'w, 's> {
     meshes: ResMut<'w, Assets<Mesh>>,
 }
 
-pub fn sync_inline_objects(mut params: SyncInlineParams) {
+/// Synchronizes Kitty inline object entities.
+///
+/// This runs after [`redraw_soft_terminal`]. It rebuilds the scene entities for registered
+/// [`InlineObject::KittyImage`] values and clears stale inline entities first so the scene matches
+/// the latest terminal anchors exactly.
+///
+/// In 2D mode it spawns [`TerminalInlineObjectSprite`] entities. In 3D mode it also generates
+/// plane-attached meshes under [`TerminalPlane`] so images follow the warped terminal surface.
+pub(crate) fn sync_inline_objects(mut params: SyncInlineParams) {
     let SyncInlineParams {
         commands,
         inline_objects,
@@ -666,6 +726,7 @@ fn spawn_rgp_object(
     }
 }
 
+/// Synchronizes RGP inline objects.
 #[derive(SystemParam)]
 pub(crate) struct RgpSyncParams<'w, 's> {
     app_config: Res<'w, AppConfig>,
@@ -687,7 +748,15 @@ pub(crate) struct RgpSyncParams<'w, 's> {
     >,
 }
 
-pub fn sync_rgp_objects(mut params: RgpSyncParams) {
+/// Synchronizes RGP object entities.
+///
+/// This runs after [`sync_inline_objects`]. It does not create registrations itself; instead, it
+/// positions existing [`TerminalRgpObject`] roots from [`TerminalInlineObjects`] anchor data.
+///
+/// In [`TerminalPresentationMode::Flat2d`] objects are placed in screen space above the terminal
+/// surface. In [`TerminalPresentationMode::Plane3d`] they are projected onto the warped terminal
+/// plane using the current [`TerminalPlane`] transform.
+pub(crate) fn sync_rgp_objects(mut params: RgpSyncParams) {
     let RgpSyncParams {
         app_config,
         terminal,
@@ -766,6 +835,7 @@ pub fn sync_rgp_objects(mut params: RgpSyncParams) {
     }
 }
 
+/// Brightness application parameters.
 #[derive(SystemParam)]
 pub(crate) struct BrightnessParams<'w, 's> {
     app_config: Res<'w, AppConfig>,
@@ -787,7 +857,16 @@ pub(crate) struct BrightnessParams<'w, 's> {
     commands: Commands<'w, 's>,
 }
 
-pub fn apply_instance_brightness(mut params: BrightnessParams) {
+/// Applies per-instance brightness to spawned materials.
+///
+/// This runs after [`sync_rgp_objects`] so newly spawned object descendants already exist. It walks
+/// up each material-bearing entity through [`ChildOf`] relationships, finds either an
+/// [`TerminalRgpObject`] root or a [`CursorModel`] root and clones the referenced material with
+/// the effective brightness applied.
+///
+/// Adjusted entities receive [`BrightnessAdjusted`] so the same material branch is not processed
+/// again every frame.
+pub(crate) fn apply_instance_brightness(mut params: BrightnessParams) {
     let BrightnessParams {
         app_config,
         inline_objects,
@@ -952,6 +1031,11 @@ fn extrude_mesh(mesh: Mesh, depth: f32) -> Mesh {
         .with_inserted_indices(Indices::U32(out_indices))
 }
 
+/// Animates the terminal plane warp.
+///
+/// This updates the front and back meshes stored in [`TerminalPlaneMeshes`]. It is independent of
+/// the redraw path and only mutates mesh vertex positions, so plane presentation can keep moving
+/// even when the terminal contents are otherwise static.
 pub fn animate_terminal_plane_warp(
     time: Res<Time>,
     warp: Res<TerminalPlaneWarp>,
@@ -992,6 +1076,7 @@ fn apply_plane_warp(mesh: Option<&mut Mesh>, pulse: f32, direction: f32) {
     }
 }
 
+/// Cursor synchronization parameters.
 #[derive(SystemParam)]
 pub(crate) struct CursorSyncParams<'w, 's> {
     app_config: Res<'w, AppConfig>,
@@ -1005,7 +1090,15 @@ pub(crate) struct CursorSyncParams<'w, 's> {
     query: CursorTransformQuery<'w, 's>,
 }
 
-pub fn sync_asset_to_terminal_cursor(mut params: CursorSyncParams) {
+/// Synchronizes the 3D cursor model with the terminal cursor.
+///
+/// This runs after [`redraw_soft_terminal`], once the cursor model has been spawned and the latest
+/// terminal cursor position is available from [`TerminalRuntime`]. It updates the [`CursorModel`]
+/// transform and visibility for both 2D and 3D presentation modes.
+///
+/// In 3D mode the cursor model is positioned relative to the current [`TerminalPlane`] transform
+/// and warp amount.
+pub(crate) fn sync_asset_to_terminal_cursor(mut params: CursorSyncParams) {
     let CursorSyncParams {
         app_config,
         runtime,

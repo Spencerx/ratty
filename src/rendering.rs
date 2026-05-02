@@ -1,3 +1,5 @@
+//! Helpers for terminal image synchronization.
+
 use bevy::prelude::*;
 use bevy::render::render_resource::Extent3d;
 
@@ -11,6 +13,7 @@ const DEBUG_CURSOR: Rgba = [126, 156, 216, 255];
 const DEBUG_FG_FALLBACK: Rgba = [220, 215, 186, 255];
 const DEBUG_BG_FALLBACK: Rgba = [31, 31, 40, 255];
 
+/// Synchronizes the terminal debug image.
 pub fn sync_terminal_debug_image(
     terminal: &TerminalSurface,
     images: &mut Assets<Image>,
@@ -42,6 +45,7 @@ pub fn sync_terminal_debug_image(
     CellDebugImageRenderer::new(data, width, height, terminal.cols, terminal.rows).render(screen);
 }
 
+/// Synchronizes an image handle across plane materials.
 pub fn sync_plane_texture<'a>(
     image_handle: Option<&Handle<Image>>,
     material_handles: impl IntoIterator<Item = &'a MeshMaterial3d<StandardMaterial>>,

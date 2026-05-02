@@ -5,9 +5,12 @@ use std::io::{self, Write};
 use std::path::Path;
 use ratatui_core::{buffer::Buffer, layout::Rect, widgets::Widget};
 
+/// Object asset format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObjectFormat {
+    /// Wavefront OBJ.
     Obj,
+    /// Binary glTF.
     Glb,
 }
 
@@ -32,19 +35,29 @@ impl ObjectFormat {
     }
 }
 
+/// Ratty graphic widget settings.
 #[derive(Debug, Clone)]
 pub struct RattyGraphicSettings<'a> {
+    /// Object identifier.
     pub id: u32,
+    /// Asset path.
     pub path: Cow<'a, str>,
+    /// Asset format.
     pub format: ObjectFormat,
+    /// Enables default animation.
     pub animate: bool,
+    /// Scale multiplier.
     pub scale: f32,
+    /// Extrusion depth.
     pub depth: f32,
+    /// Optional object color.
     pub color: Option<[u8; 3]>,
+    /// Object brightness multiplier.
     pub brightness: f32,
 }
 
 impl<'a> RattyGraphicSettings<'a> {
+    /// Creates widget settings for an asset path.
     pub fn new(path: impl Into<Cow<'a, str>>) -> Self {
         let path = path.into();
         Self {
@@ -59,59 +72,71 @@ impl<'a> RattyGraphicSettings<'a> {
         }
     }
 
+    /// Sets the object identifier.
     pub fn id(mut self, id: u32) -> Self {
         self.id = id;
         self
     }
 
+    /// Sets the asset format.
     pub fn format(mut self, format: ObjectFormat) -> Self {
         self.format = format;
         self
     }
 
+    /// Enables or disables animation.
     pub fn animate(mut self, animate: bool) -> Self {
         self.animate = animate;
         self
     }
 
+    /// Sets the scale multiplier.
     pub fn scale(mut self, scale: f32) -> Self {
         self.scale = scale;
         self
     }
 
+    /// Sets the extrusion depth.
     pub fn depth(mut self, depth: f32) -> Self {
         self.depth = depth;
         self
     }
 
+    /// Sets the object color.
     pub fn color(mut self, color: [u8; 3]) -> Self {
         self.color = Some(color);
         self
     }
 
+    /// Sets the brightness multiplier.
     pub fn brightness(mut self, brightness: f32) -> Self {
         self.brightness = brightness;
         self
     }
 }
 
+/// Ratty graphic widget.
 pub struct RattyGraphic<'a> {
     settings: RattyGraphicSettings<'a>,
 }
 
 impl<'a> RattyGraphic<'a> {
+    /// Creates a graphic widget.
     pub fn new(settings: RattyGraphicSettings<'a>) -> Self {
         Self { settings }
     }
 
+    /// Returns the widget settings.
     pub fn settings(&self) -> &RattyGraphicSettings<'a> {
         &self.settings
     }
 
+    /// Returns mutable widget settings.
     pub fn settings_mut(&mut self) -> &mut RattyGraphicSettings<'a> {
         &mut self.settings
     }
 
+    /// Returns the RGP register sequence.
     pub fn register_sequence(&self) -> String {
         format!(
             "\x1b_ratty;g;r;id={};fmt={};path={}\x1b\\",
@@ -121,11 +146,17 @@ impl<'a> RattyGraphic<'a> {
         )
     }
 
+    /// Writes the RGP register sequence to stdout.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stdout cannot be written or flushed.
     pub fn register(&self) -> io::Result<()> {
         io::stdout().write_all(self.register_sequence().as_bytes())?;
         io::stdout().flush()
     }
 
+    /// Returns the RGP place sequence for an area.
     pub fn place_sequence(&self, area: Rect) -> String {
         let center_row = area.y.saturating_add(area.height.saturating_sub(1) / 2);
         let center_col = area.x.saturating_add(area.width.saturating_sub(1) / 2);
@@ -147,16 +178,23 @@ impl<'a> RattyGraphic<'a> {
         )
     }
 
+    /// Returns the RGP delete sequence.
     pub fn delete_sequence(&self) -> String {
         format!("\x1b_ratty;g;d;id={}\x1b\\", self.settings.id)
     }
 
+    /// Writes the RGP delete sequence to stdout.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if stdout cannot be written or flushed.
     pub fn clear(&self) -> io::Result<()> {
         io::stdout().write_all(self.delete_sequence().as_bytes())?;
         io::stdout().flush()
     }
 }
 
+/// Renders the place sequence into a Ratatui buffer.
 impl Widget for &RattyGraphic<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {

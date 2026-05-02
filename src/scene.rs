@@ -1,3 +1,5 @@
+//! Scene setup and presentation resources.
+
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ClearColorConfig;
 use bevy::ecs::query::With;
@@ -10,53 +12,72 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use crate::config::AppConfig;
 use crate::terminal::TerminalSurface;
 
+/// Marker for the 2D terminal sprite.
 #[derive(Component)]
 pub struct TerminalSprite;
 
+/// Marker for the front 3D terminal plane.
 #[derive(Component)]
 pub struct TerminalPlane;
 
+/// Marker for the back 3D terminal plane.
 #[derive(Component)]
 pub struct TerminalPlaneBack;
 
+/// Marker for the 3D presentation camera.
 #[derive(Component)]
 pub struct TerminalPlaneCamera;
 
+/// Handles for terminal plane meshes.
 #[derive(Resource)]
 pub struct TerminalPlaneMeshes {
+    /// Front plane mesh.
     pub front: Handle<Mesh>,
+    /// Back plane mesh.
     pub back: Handle<Mesh>,
 }
 
+/// Plane warp state.
 #[derive(Resource, Default)]
 pub struct TerminalPlaneWarp {
+    /// Warp amount.
     pub amount: f32,
 }
 
 impl TerminalPlaneWarp {
+    /// Adjusts the warp amount.
     pub fn adjust(&mut self, delta: f32) {
         self.amount = (self.amount + delta).clamp(0.0, 1.0);
     }
 }
 
+/// Terminal viewport geometry.
 #[derive(Resource, Clone, Copy)]
 pub struct TerminalViewport {
+    /// Viewport size in logical pixels.
     pub size: Vec2,
+    /// Viewport center in world space.
     pub center: Vec2,
 }
 
+/// Terminal presentation mode.
 #[derive(Resource, Clone, Copy, PartialEq, Eq)]
 pub enum TerminalPresentationMode {
+    /// Flat 2D presentation.
     Flat2d,
+    /// Warped 3D presentation.
     Plane3d,
 }
 
+/// Active terminal presentation.
 #[derive(Resource)]
 pub struct TerminalPresentation {
+    /// Current presentation mode.
     pub mode: TerminalPresentationMode,
 }
 
 impl TerminalPresentation {
+    /// Toggles the presentation mode.
     pub fn toggle(&mut self) {
         self.mode = match self.mode {
             TerminalPresentationMode::Flat2d => TerminalPresentationMode::Plane3d,
@@ -65,15 +86,24 @@ impl TerminalPresentation {
     }
 }
 
+/// Camera state for 3D presentation.
 #[derive(Resource)]
 pub struct TerminalPlaneView {
+    /// Camera yaw.
     pub yaw: f32,
+    /// Camera pitch.
     pub pitch: f32,
+    /// Camera zoom factor.
     pub zoom: f32,
+    /// Camera pan offset.
     pub camera_offset: Vec2,
+    /// Indicates drag rotation.
     pub rotating: bool,
+    /// Indicates drag panning.
     pub panning: bool,
+    /// Last rotation cursor position.
     pub last_rotate_cursor: Option<Vec2>,
+    /// Last pan cursor position.
     pub last_pan_cursor: Option<Vec2>,
 }
 
@@ -92,9 +122,12 @@ impl Default for TerminalPlaneView {
     }
 }
 
+/// Model loading state.
 #[derive(Resource)]
 pub struct ModelLoadState {
+    /// Indicates the scene has loaded models.
     pub loaded: bool,
+    /// Indicates the first terminal frame was uploaded.
     pub first_frame_uploaded: bool,
 }
 
@@ -130,6 +163,10 @@ pub(crate) struct PresentationParams<'w, 's> {
     >,
 }
 
+/// Sets up the terminal presentation scene.
+///
+/// This startup system creates the 2D and 3D cameras, terminal sprite, terminal plane meshes,
+/// backing images, lighting and presentation resources used by later update systems.
 pub fn setup_scene(
     mut commands: Commands,
     app_config: Res<AppConfig>,
@@ -293,7 +330,8 @@ fn create_terminal_image(width: u32, height: u32, fill: [u8; 4]) -> Image {
     image
 }
 
-pub fn apply_terminal_presentation(
+/// Applies the active terminal presentation mode.
+pub(crate) fn apply_terminal_presentation(
     presentation: Res<TerminalPresentation>,
     plane_view: Res<TerminalPlaneView>,
     mut params: PresentationParams,

@@ -1,3 +1,5 @@
+//! Bevy plugin wiring for the terminal application.
+
 use bevy::prelude::*;
 
 use crate::inline::TerminalInlineObjects;
@@ -11,6 +13,7 @@ use crate::systems::{
 };
 use crate::terminal::TerminalRedrawState;
 
+/// Main terminal plugin.
 pub struct TerminalPlugin;
 
 impl Plugin for TerminalPlugin {

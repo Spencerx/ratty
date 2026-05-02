@@ -1,16 +1,26 @@
+//! Ratty Graphics Protocol parsing.
+
+/// Ratty Graphics Protocol APC prefix.
 pub const RGP_APC_START: &[u8] = b"\x1b_ratty;g;";
 const ST: &[u8] = b"\x1b\\";
 const C1_ST: u8 = 0x9c;
 
+/// Placement style for an RGP object.
 #[derive(Clone, Copy, Default)]
 pub struct RgpPlacementStyle {
+    /// Enables default animation.
     pub animate: bool,
+    /// Scale multiplier.
     pub scale: f32,
+    /// Extrusion depth.
     pub depth: f32,
+    /// Optional object color.
     pub color: Option<[u8; 3]>,
+    /// Brightness multiplier.
     pub brightness: f32,
 }
 
+/// Consumes an RGP APC sequence.
 pub fn consume_sequence(sequence: &[u8]) -> Option<RgpOperation> {
     if !sequence.starts_with(RGP_APC_START) {
         return None;
@@ -87,32 +97,51 @@ pub fn consume_sequence(sequence: &[u8]) -> Option<RgpOperation> {
     }
 }
 
+/// RGP anchor placement.
 #[derive(Clone, Copy)]
 pub struct RgpAnchor {
+    /// Anchor row.
     pub row: u16,
+    /// Anchor column.
     pub col: u16,
+    /// Object width in cells.
     pub columns: u32,
+    /// Object height in cells.
     pub rows: u32,
+    /// Placement style.
     pub style: RgpPlacementStyle,
 }
 
+/// Parsed RGP operation.
 pub enum RgpOperation {
+    /// Support query.
     SupportQuery,
+    /// Object registration.
     Register {
+        /// Object identifier.
         object_id: u32,
+        /// Declared object format.
         format: String,
+        /// Asset path.
         path: String,
     },
+    /// Object placement.
     Place {
+        /// Object identifier.
         object_id: u32,
+        /// Placement anchor.
         anchor: RgpAnchor,
     },
+    /// Object deletion.
     Delete {
+        /// Optional object identifier.
         object_id: Option<u32>,
     },
+    /// Ignored operation.
     Ignored,
 }
 
+/// Returns the RGP support reply sequence.
 pub fn support_reply() -> Vec<u8> {
     b"\x1b_ratty;g;s;v=1;fmt=obj|glb;path=1;anim=1;depth=1;color=1;brightness=1\x1b\\".to_vec()
 }

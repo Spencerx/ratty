@@ -1,3 +1,5 @@
+//! Mouse input handling and selection state.
+
 use bevy::ecs::message::MessageReader;
 use bevy::ecs::system::SystemParam;
 use bevy::input::ButtonState;
@@ -12,6 +14,7 @@ use crate::scene::{
 };
 use crate::terminal::TerminalSurface;
 
+/// Active terminal text selection.
 #[derive(Resource, Clone, Default)]
 pub struct TerminalSelection {
     start: Option<UVec2>,
@@ -28,15 +31,21 @@ pub(crate) struct ForwardedMouseState {
     last_cell: Option<UVec2>,
 }
 
+/// Normalized selection bounds.
 #[derive(Copy, Clone)]
 pub struct SelectionBounds {
+    /// First selected row.
     pub start_row: u32,
+    /// Last selected row.
     pub end_row: u32,
+    /// First selected column.
     pub start_col: u32,
+    /// Last selected column.
     pub end_col: u32,
 }
 
 impl SelectionBounds {
+    /// Returns whether a cell is inside the bounds.
     pub fn contains(&self, row: u16, col: u16) -> bool {
         let row = row as u32;
         let col = col as u32;
@@ -62,6 +71,7 @@ impl SelectionBounds {
 }
 
 impl TerminalSelection {
+    /// Returns normalized selection bounds.
     pub fn normalized_bounds(&self) -> Option<SelectionBounds> {
         let start = self.start?;
         let end = self.end.unwrap_or(start);
@@ -73,6 +83,7 @@ impl TerminalSelection {
         })
     }
 
+    /// Starts a selection at a cell.
     pub fn begin(&mut self, cell: UVec2) -> bool {
         let changed = self.start != Some(cell) || self.end != Some(cell) || !self.dragging;
         self.start = Some(cell);
@@ -81,6 +92,7 @@ impl TerminalSelection {
         changed
     }
 
+    /// Updates the selection end cell.
     pub fn update(&mut self, cell: UVec2) -> bool {
         if self.dragging && self.end != Some(cell) {
             self.end = Some(cell);
@@ -89,12 +101,14 @@ impl TerminalSelection {
         false
     }
 
+    /// Ends an in-progress selection.
     pub fn end(&mut self) -> bool {
         let changed = self.dragging;
         self.dragging = false;
         changed
     }
 
+    /// Clears the selection.
     pub fn clear(&mut self) -> bool {
         let changed = self.start.is_some() || self.end.is_some() || self.dragging;
         self.start = None;
@@ -104,14 +118,17 @@ impl TerminalSelection {
         changed
     }
 
+    /// Stores the current pointer position.
     pub fn set_cursor_position(&mut self, position: Vec2) {
         self.cursor_position = Some(position);
     }
 
+    /// Returns the current pointer position.
     pub fn cursor_position(&self) -> Option<Vec2> {
         self.cursor_position
     }
 
+    /// Returns the selected screen text.
     pub fn selected_text(&self, screen: &vt100::Screen) -> Option<String> {
         let bounds = self.normalized_bounds()?;
 
@@ -159,6 +176,7 @@ impl TerminalSelection {
     }
 }
 
+/// Mouse input system parameters.
 #[derive(SystemParam)]
 pub struct MouseSystemParams<'w, 's> {
     primary_window: Query<'w, 's, (Entity, &'static Window), With<PrimaryWindow>>,
@@ -171,7 +189,8 @@ pub struct MouseSystemParams<'w, 's> {
     redraw: ResMut<'w, crate::terminal::TerminalRedrawState>,
 }
 
-pub fn handle_mouse_input(
+/// Handles terminal mouse input.
+pub(crate) fn handle_mouse_input(
     mut cursor_events: MessageReader<CursorMoved>,
     mut button_events: MessageReader<MouseButtonInput>,
     mut wheel_events: MessageReader<MouseWheel>,

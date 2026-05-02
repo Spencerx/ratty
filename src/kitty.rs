@@ -1,13 +1,17 @@
+//! Kitty graphics protocol parsing.
+
 use std::collections::HashMap;
 
 use base64::Engine as _;
 
 use crate::inline::{InlineAnchor, InlineObject, InlineStyle, KittyInlineObject, RasterObject};
 
+/// Kitty graphics APC prefix.
 pub const KITTY_APC_START: &[u8] = b"\x1b_G";
 const ST: &[u8] = b"\x1b\\";
 const C1_ST: u8 = 0x9c;
 
+/// Parser state for Kitty graphics sequences.
 #[derive(Default)]
 pub struct KittyParserState {
     transfer: Option<KittyTransfer>,
@@ -15,6 +19,7 @@ pub struct KittyParserState {
 }
 
 impl KittyParserState {
+    /// Consumes a Kitty graphics APC sequence.
     pub fn consume_sequence(
         &mut self,
         sequence: &[u8],
@@ -132,15 +137,21 @@ impl KittyParserState {
     }
 }
 
+/// Decoded Kitty image payload.
 #[derive(Default)]
 pub struct KittyImage {
+    /// Image width in pixels.
     pub width: u32,
+    /// Image height in pixels.
     pub height: u32,
+    /// RGBA image bytes.
     pub rgba: Vec<u8>,
+    /// Indicates placeholder mode.
     pub uses_placeholders: bool,
 }
 
 impl KittyImage {
+    /// Converts the decoded image into an inline object.
     pub fn rasterize(self) -> KittyInlineObject {
         KittyInlineObject {
             raster: RasterObject {
@@ -154,31 +165,51 @@ impl KittyImage {
     }
 }
 
+/// Kitty object anchor.
 #[derive(Clone, Copy)]
 pub struct KittyAnchor {
+    /// Anchor row.
     pub row: u16,
+    /// Anchor column.
     pub col: u16,
+    /// Object width in cells.
     pub columns: u32,
+    /// Object height in cells.
     pub rows: u32,
 }
 
+/// Parsed Kitty graphics operation.
 pub enum KittyOperation {
+    /// Indicates a multipart transfer is still pending.
     Pending,
+    /// Indicates the sequence was ignored.
     Ignored,
+    /// Image registration without placement.
     TransmitOnly {
+        /// Object identifier.
         object_id: u32,
+        /// Decoded image.
         image: KittyImage,
     },
+    /// Image registration with placement.
     TransmitAndPlace {
+        /// Object identifier.
         object_id: u32,
+        /// Decoded image.
         image: KittyImage,
+        /// Placement anchor.
         anchor: KittyAnchor,
     },
+    /// Placement of a previously registered image.
     PlaceExisting {
+        /// Object identifier.
         object_id: u32,
+        /// Placement anchor.
         anchor: KittyAnchor,
     },
+    /// Image deletion.
     Delete {
+        /// Optional object identifier.
         object_id: Option<u32>,
     },
 }
@@ -241,6 +272,7 @@ impl KittyTransfer {
     }
 }
 
+/// Refreshes placeholder-backed Kitty anchors from the VT100 screen.
 pub fn refresh_kitty_placeholder_anchors(
     objects: &HashMap<u32, InlineObject>,
     anchors: &mut HashMap<u32, InlineAnchor>,

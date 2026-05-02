@@ -1,3 +1,5 @@
+//! PTY runtime and parser state.
+
 use std::collections::HashSet;
 use std::env;
 use std::io::{ErrorKind, Read, Write};
@@ -11,6 +13,7 @@ use vt100::{Callbacks, Parser, Screen};
 
 use crate::config::AppConfig;
 
+/// Callback state for unhandled parser sequences.
 #[derive(Default)]
 pub struct TerminalParserCallbacks {
     seen_csi: HashSet<String>,
@@ -67,16 +70,28 @@ impl Callbacks for TerminalParserCallbacks {
     }
 }
 
+/// Running PTY and parser state.
 pub struct TerminalRuntime {
+    /// PTY output channel.
     pub rx: Receiver<Vec<u8>>,
+    /// PTY input writer.
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    /// PTY master handle.
     pub _master: Box<dyn MasterPty + Send>,
+    /// Child process handle.
     pub _child: Box<dyn portable_pty::Child + Send + Sync>,
+    /// Terminal parser.
     pub parser: Parser<TerminalParserCallbacks>,
+    /// Indicates PTY shutdown.
     pub pty_disconnected: bool,
 }
 
 impl TerminalRuntime {
+    /// Spawns the shell PTY runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the PTY cannot be created or the shell cannot be spawned.
     pub fn spawn(config: &AppConfig) -> anyhow::Result<Self> {
         let cols = config.terminal.default_cols;
         let rows = config.terminal.default_rows;
@@ -153,6 +168,7 @@ impl TerminalRuntime {
         })
     }
 
+    /// Writes input bytes to the PTY.
     pub fn write_input(&self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
@@ -164,6 +180,7 @@ impl TerminalRuntime {
         }
     }
 
+    /// Resizes the PTY and parser screen.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         if cols == 0 || rows == 0 {
             return;

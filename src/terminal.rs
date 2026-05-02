@@ -1,3 +1,5 @@
+//! Terminal surface rendering and Ratatui integration.
+
 use bevy::prelude::*;
 use parley_ratatui::ratatui::Terminal;
 use parley_ratatui::ratatui::buffer::Buffer;
@@ -12,6 +14,7 @@ use parley_ratatui::{
 use crate::config::{AppConfig, FontConfig, FontStyleConfig, TERMINAL_TEXTURE_LABEL, ThemeConfig};
 use crate::mouse::TerminalSelection;
 
+/// Terminal redraw flag.
 #[derive(Resource)]
 pub struct TerminalRedrawState {
     needs_redraw: bool,
@@ -24,20 +27,28 @@ impl Default for TerminalRedrawState {
 }
 
 impl TerminalRedrawState {
+    /// Requests a terminal redraw.
     pub fn request(&mut self) {
         self.needs_redraw = true;
     }
 
+    /// Returns whether a redraw was pending.
     pub fn take(&mut self) -> bool {
         std::mem::take(&mut self.needs_redraw)
     }
 }
 
+/// Terminal surface and render state.
 pub struct TerminalSurface {
+    /// Ratatui terminal backend.
     pub tui: Terminal<ParleyBackend>,
+    /// Front texture image handle.
     pub image_handle: Option<Handle<Image>>,
+    /// Back texture image handle.
     pub back_image_handle: Option<Handle<Image>>,
+    /// Terminal column count.
     pub cols: u16,
+    /// Terminal row count.
     pub rows: u16,
     cursor_model_visible: bool,
     font: FontConfig,
@@ -99,6 +110,11 @@ impl OffscreenGpu {
 }
 
 impl TerminalSurface {
+    /// Creates a terminal surface from the application config.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the terminal backend cannot be initialized.
     pub fn new(config: &AppConfig) -> anyhow::Result<Self> {
         let cols = config.terminal.default_cols;
         let rows = config.terminal.default_rows;
@@ -126,6 +142,7 @@ impl TerminalSurface {
         })
     }
 
+    /// Adjusts the font size.
     pub fn adjust_font_size(&mut self, delta: i32) -> bool {
         let new_size = self.font.size + delta;
         if new_size == self.font.size {
@@ -143,10 +160,12 @@ impl TerminalSurface {
         true
     }
 
+    /// Returns the current font size.
     pub fn font_size(&self) -> i32 {
         self.font.size
     }
 
+    /// Resizes the terminal grid.
     pub fn resize(&mut self, cols: u16, rows: u16) {
         if cols == 0 || rows == 0 {
             return;
@@ -170,6 +189,7 @@ impl TerminalSurface {
         }
     }
 
+    /// Returns the rendered cell size in pixels.
     pub fn char_dimensions(&self) -> UVec2 {
         let metrics = self.renderer.metrics();
         UVec2::new(
@@ -178,6 +198,7 @@ impl TerminalSurface {
         )
     }
 
+    /// Returns the terminal pixmap dimensions in pixels.
     pub fn pixmap_dimensions(&self) -> UVec2 {
         let (width, height) = self
             .renderer
@@ -185,6 +206,11 @@ impl TerminalSurface {
         UVec2::new(width, height)
     }
 
+    /// Synchronizes the rendered terminal image.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the offscreen renderer cannot be initialized or rendered.
     pub fn sync_image(
         &mut self,
         images: &mut Assets<Image>,
@@ -203,7 +229,9 @@ impl TerminalSurface {
         if self.gpu.is_none() {
             self.gpu = Some(pollster::block_on(OffscreenGpu::new(width, height))?);
         }
-        let gpu = self.gpu.as_mut().expect("gpu should be initialized");
+        let Some(gpu) = self.gpu.as_mut() else {
+            anyhow::bail!("offscreen GPU renderer should be initialized");
+        };
         gpu.resize(width, height);
 
         let buffer = self.tui.backend().buffer();
@@ -273,10 +301,15 @@ fn build_terminal_renderer(font: &FontConfig, theme_config: &ThemeConfig) -> Ter
     )
 }
 
+/// Ratatui widget backed by a VT100 screen.
 pub struct TerminalWidget<'a> {
+    /// Screen to render.
     pub screen: &'a vt100::Screen,
+    /// Active selection.
     pub selection: &'a TerminalSelection,
+    /// Terminal theme.
     pub theme: &'a ThemeConfig,
+    /// Base font style override.
     pub font_style: FontStyleConfig,
 }
 

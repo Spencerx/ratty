@@ -1,24 +1,10 @@
-mod config;
-mod inline;
-mod keyboard;
-mod kitty;
-mod model;
-mod mouse;
-mod plugin;
-mod rendering;
-mod rgp;
-mod runtime;
-mod scene;
-mod systems;
-mod terminal;
-
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 
-use crate::config::AppConfig;
-use crate::plugin::TerminalPlugin;
-use crate::runtime::TerminalRuntime;
-use crate::terminal::TerminalSurface;
+use ratty::config::AppConfig;
+use ratty::plugin::TerminalPlugin;
+use ratty::runtime::TerminalRuntime;
+use ratty::terminal::TerminalSurface;
 
 fn main() -> anyhow::Result<()> {
     let app_config = AppConfig::load()?;

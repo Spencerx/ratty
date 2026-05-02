@@ -1,3 +1,5 @@
+//! Inline object state and APC handling.
+
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -13,17 +15,22 @@ const APC_START: &[u8] = b"\x1b_";
 const ST: &[u8] = b"\x1b\\";
 const C1_ST: u8 = 0x9c;
 
+/// Marker for 2D inline object sprites.
 #[derive(Component)]
 pub struct TerminalInlineObjectSprite;
 
+/// Marker for 3D inline object planes.
 #[derive(Component)]
 pub struct TerminalInlineObjectPlane;
 
+/// Marker for RGP-backed inline objects.
 #[derive(Component)]
 pub struct TerminalRgpObject {
+    /// Registered object identifier.
     pub object_id: u32,
 }
 
+/// Inline object registry and anchor state.
 #[derive(Resource, Default)]
 pub struct TerminalInlineObjects {
     pending_bytes: Vec<u8>,
@@ -37,6 +44,7 @@ pub struct TerminalInlineObjects {
 }
 
 impl TerminalInlineObjects {
+    /// Consumes PTY output and extracts inline object control sequences.
     pub fn consume_pty_output<CB: Callbacks>(
         &mut self,
         chunk: &[u8],
@@ -80,6 +88,7 @@ impl TerminalInlineObjects {
         }
     }
 
+    /// Returns whether inline objects need synchronization.
     pub fn needs_sync(&self, viewport_size: Vec2, cols: u16, rows: u16) -> bool {
         self.dirty
             || self.last_viewport_size != viewport_size
@@ -87,6 +96,7 @@ impl TerminalInlineObjects {
             || self.last_rows != rows
     }
 
+    /// Marks synchronization as complete.
     pub fn finish_sync(&mut self, viewport_size: Vec2, cols: u16, rows: u16) {
         self.dirty = false;
         self.last_viewport_size = viewport_size;
@@ -94,6 +104,7 @@ impl TerminalInlineObjects {
         self.last_rows = rows;
     }
 
+    /// Applies upward scroll to anchored objects.
     pub fn apply_scroll(&mut self, rows_scrolled: u16) {
         if rows_scrolled == 0 || self.anchors.is_empty() {
             return;
@@ -117,6 +128,7 @@ impl TerminalInlineObjects {
         self.dirty = true;
     }
 
+    /// Refreshes placeholder-derived Kitty anchors.
     pub fn refresh_placeholder_anchors(&mut self, screen: &vt100::Screen) {
         if refresh_kitty_placeholder_anchors(&self.objects, &mut self.anchors, screen) {
             self.dirty = true;
@@ -358,30 +370,48 @@ fn apc_end(bytes: &[u8], payload_start: usize) -> Option<usize> {
     }
 }
 
+/// Registered inline object.
 pub enum InlineObject {
+    /// Kitty image object.
     KittyImage(KittyInlineObject),
+    /// Ratty graphics object.
     RgpObject(RgpInlineObject),
 }
 
+/// Raster image payload.
 pub struct RasterObject {
+    /// Image width in pixels.
     pub width: u32,
+    /// Image height in pixels.
     pub height: u32,
+    /// RGBA image bytes.
     pub rgba: Vec<u8>,
+    /// Uploaded image handle.
     pub handle: Option<Handle<Image>>,
 }
 
+/// Kitty-backed inline object.
 pub struct KittyInlineObject {
+    /// Raster image payload.
     pub raster: RasterObject,
+    /// Indicates placeholder-driven placement.
     pub uses_placeholders: bool,
 }
 
+/// RGP-backed inline object.
 pub enum RgpInlineObject {
+    /// OBJ mesh payload.
     Obj {
+        /// Loaded mesh parts.
         meshes: Vec<Mesh>,
+        /// Cached mesh handles keyed by depth.
         handles: Option<(u32, Vec<Handle<Mesh>>)>,
     },
+    /// glTF scene payload.
     Gltf {
+        /// Scene asset path.
         asset_path: String,
+        /// Cached scene handle.
         handle: Option<Handle<Scene>>,
     },
 }
@@ -395,20 +425,32 @@ impl InlineObject {
     }
 }
 
+/// Inline object anchor.
 pub struct InlineAnchor {
+    /// Anchor row.
     pub row: u16,
+    /// Anchor column.
     pub col: u16,
+    /// Object width in cells.
     pub columns: u32,
+    /// Object height in cells.
     pub rows: u32,
+    /// Inline styling.
     pub style: InlineStyle,
 }
 
+/// Inline object style.
 #[derive(Clone, Copy, Default)]
 pub struct InlineStyle {
+    /// Enables default animation.
     pub animate: bool,
+    /// Scale multiplier.
     pub scale: f32,
+    /// Extrusion depth.
     pub depth: f32,
+    /// Optional object color.
     pub color: Option<[u8; 3]>,
+    /// Brightness multiplier.
     pub brightness: f32,
 }
 

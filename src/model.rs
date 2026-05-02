@@ -1,3 +1,5 @@
+//! Cursor and object asset loading.
+
 use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 
@@ -14,14 +16,19 @@ use crate::config::{AppConfig, CURSOR_DEPTH};
 #[folder = "assets/objects/"]
 struct EmbeddedObjects;
 
+/// Marker for the spawned cursor model root.
 #[derive(Component)]
 pub struct CursorModel;
 
+/// Loaded object source.
 pub enum ObjectSource {
+    /// OBJ mesh parts.
     Obj(Vec<Mesh>),
+    /// glTF scene asset path.
     Gltf(String),
 }
 
+/// Spawns the configured cursor model.
 pub fn spawn_cursor_model(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
@@ -93,6 +100,11 @@ pub fn spawn_cursor_model(
     }
 }
 
+/// Loads an object source from a path.
+///
+/// # Errors
+///
+/// Returns an error if the asset cannot be resolved or parsed.
 pub fn load_object_source(path: &Path) -> anyhow::Result<(String, ObjectSource)> {
     let candidate = object_asset_path(path)?;
     let extension = Path::new(&candidate)

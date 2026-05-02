@@ -1,3 +1,5 @@
+//! Keyboard input handling.
+
 use bevy::ecs::system::SystemParam;
 use bevy::ecs::world::FromWorld;
 use bevy::input::ButtonState;
@@ -12,6 +14,7 @@ use crate::runtime::TerminalRuntime;
 use crate::scene::{TerminalPlaneWarp, TerminalPresentation, TerminalViewport};
 use crate::terminal::{TerminalRedrawState, TerminalSurface};
 
+/// Clipboard bridge for terminal copy and paste.
 pub struct TerminalClipboard {
     clipboard: Option<Clipboard>,
 }
@@ -42,6 +45,7 @@ impl TerminalClipboard {
     }
 }
 
+/// Resolved terminal key bindings.
 #[derive(Resource)]
 pub struct TerminalKeyBindings {
     bindings: Vec<KeyBinding>,
@@ -183,6 +187,7 @@ impl TerminalKeyBindings {
     }
 }
 
+/// Keyboard modifier state.
 #[derive(Default)]
 pub struct TerminalKeyboard {
     pub(crate) ctrl_pressed: bool,
@@ -192,6 +197,7 @@ pub struct TerminalKeyboard {
 }
 
 impl TerminalKeyboard {
+    /// Translates a keyboard event into terminal input bytes.
     pub fn handle_event_with_modes(
         &mut self,
         event: &KeyboardInput,
@@ -241,6 +247,7 @@ impl TerminalKeyboard {
     }
 }
 
+/// Keyboard input system parameters.
 #[derive(SystemParam)]
 pub struct KeyboardSystemParams<'w, 's> {
     selection: ResMut<'w, TerminalSelection>,
@@ -255,6 +262,7 @@ pub struct KeyboardSystemParams<'w, 's> {
     _marker: std::marker::PhantomData<&'s ()>,
 }
 
+/// Handles terminal keyboard input.
 pub fn handle_keyboard_input(
     mut keyboard_events: MessageReader<KeyboardInput>,
     mut keyboard: Local<TerminalKeyboard>,
