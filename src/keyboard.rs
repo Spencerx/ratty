@@ -1,5 +1,5 @@
-use bevy::ecs::world::FromWorld;
 use bevy::ecs::system::SystemParam;
+use bevy::ecs::world::FromWorld;
 use bevy::input::ButtonState;
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
@@ -279,7 +279,9 @@ pub fn handle_keyboard_input(
                     continue;
                 }
                 BindingAction::Copy => {
-                    if let Some(text) = params.selection.selected_text(params.runtime.parser.screen())
+                    if let Some(text) = params
+                        .selection
+                        .selected_text(params.runtime.parser.screen())
                         && !text.is_empty()
                     {
                         params.clipboard.copy(&text);
@@ -332,11 +334,8 @@ pub fn handle_keyboard_input(
             params.redraw.request();
         }
 
-        if let Some(input) =
-            keyboard.handle_event_with_modes(
-                event,
-                params.runtime.parser.screen().application_cursor(),
-            )
+        if let Some(input) = keyboard
+            .handle_event_with_modes(event, params.runtime.parser.screen().application_cursor())
         {
             params.runtime.write_input(&input);
         }

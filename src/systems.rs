@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::mpsc::TryRecvError;
 
 use bevy::app::AppExit;
-use bevy::ecs::system::SystemParam;
 use bevy::ecs::message::{MessageReader, MessageWriter};
+use bevy::ecs::system::SystemParam;
 use bevy::gltf::GltfAssetLabel;
 use bevy::image::ImageSampler;
 use bevy::mesh::{Indices, VertexAttributeValues};
@@ -90,23 +90,23 @@ pub fn pump_pty_output(
     mut app_exit: MessageWriter<AppExit>,
     mut redraw: ResMut<TerminalRedrawState>,
 ) {
+    let screen_rows = |screen: &vt100::Screen| {
+        let (_, cols) = screen.size();
+        screen.rows(0, cols).collect::<Vec<_>>()
+    };
+
     let mut processed_output = false;
     loop {
         match runtime.rx.try_recv() {
             Ok(chunk) => {
-                let prev_rows: Option<Vec<String>> = if !inline_objects.anchors.is_empty() {
-                    let (_, cols) = runtime.parser.screen().size();
-                    Some(runtime.parser.screen().rows(0, cols).collect::<Vec<_>>())
-                } else {
-                    None
-                };
+                let prev_rows = (!inline_objects.anchors.is_empty())
+                    .then(|| screen_rows(runtime.parser.screen()));
                 let replies = inline_objects.consume_pty_output(&chunk, &mut runtime.parser);
                 for reply in replies {
                     runtime.write_input(&reply);
                 }
                 if let Some(prev_rows) = prev_rows {
-                    let (_, cols) = runtime.parser.screen().size();
-                    let next_rows = runtime.parser.screen().rows(0, cols).collect::<Vec<_>>();
+                    let next_rows = screen_rows(runtime.parser.screen());
                     let scrolled = infer_upward_scroll(&prev_rows, &next_rows);
                     inline_objects.apply_scroll(scrolled);
                 }
@@ -332,13 +332,7 @@ pub fn redraw_soft_terminal(mut params: RedrawParams) {
     }
 
     if !model_load_state.loaded {
-        spawn_cursor_model(
-            commands,
-            meshes,
-            materials,
-            asset_server,
-            app_config,
-        );
+        spawn_cursor_model(commands, meshes, materials, asset_server, app_config);
         model_load_state.loaded = true;
     }
 }
@@ -417,17 +411,15 @@ pub fn sync_inline_objects(mut params: SyncInlineParams) {
 
     let mut plane_children = Vec::new();
     for object_id in renderable_ids {
-        let anchor = inline_objects
-            .anchors
-            .get(&object_id)
-            .expect("inline object anchor should exist");
+        let Some(anchor) = inline_objects.anchors.get(&object_id) else {
+            continue;
+        };
         let layout = inline_layout(anchor, terminal, viewport, cell_width, cell_height);
         let style = anchor.style;
-        match inline_objects
-            .objects
-            .get_mut(&object_id)
-            .expect("inline object should exist")
-        {
+        let Some(object) = inline_objects.objects.get_mut(&object_id) else {
+            continue;
+        };
+        match object {
             InlineObject::KittyImage(object) => {
                 let mut ctx = KittyRenderContext {
                     mode: presentation.mode,
@@ -438,12 +430,7 @@ pub fn sync_inline_objects(mut params: SyncInlineParams) {
                     meshes,
                     plane_children: &mut plane_children,
                 };
-                sync_kitty_inline_image(
-                    commands,
-                    object,
-                    &layout,
-                    &mut ctx,
-                );
+                sync_kitty_inline_image(commands, object, &layout, &mut ctx);
             }
             InlineObject::RgpObject(object) => {
                 spawn_rgp_object(
@@ -1061,7 +1048,10 @@ pub fn sync_asset_to_terminal_cursor(mut params: CursorSyncParams) {
     }
 }
 
-fn cursor_pose(app_config: &AppConfig, ctx: &CursorPoseContext<'_, '_, '_>) -> (Vec3, Quat, f32, Visibility) {
+fn cursor_pose(
+    app_config: &AppConfig,
+    ctx: &CursorPoseContext<'_, '_, '_>,
+) -> (Vec3, Quat, f32, Visibility) {
     let cols = ctx.terminal.cols.max(1) as f32;
     let rows = ctx.terminal.rows.max(1) as f32;
     let cell_width = ctx.viewport.size.x / cols;
@@ -1075,7 +1065,8 @@ fn cursor_pose(app_config: &AppConfig, ctx: &CursorPoseContext<'_, '_, '_>) -> (
 
     let cursor_x = cursor_col + 0.5 + app_config.cursor.model.x_offset;
     let local_x = ctx.viewport.center.x - ctx.viewport.size.x * 0.5 + cursor_x * cell_width;
-    let local_y = ctx.viewport.center.y + ctx.viewport.size.y * 0.5 - (cursor_row + 0.5) * cell_height;
+    let local_y =
+        ctx.viewport.center.y + ctx.viewport.size.y * 0.5 - (cursor_row + 0.5) * cell_height;
     let spin = ctx.elapsed_secs * app_config.cursor.animation.spin_speed;
     let bob = (ctx.elapsed_secs * app_config.cursor.animation.bob_speed).sin()
         * cell_height
@@ -1092,10 +1083,9 @@ fn cursor_pose(app_config: &AppConfig, ctx: &CursorPoseContext<'_, '_, '_>) -> (
             },
         ),
         TerminalPresentationMode::Plane3d => {
-            let plane_transform = ctx
-                .plane_query
-                .single()
-                .expect("terminal plane should exist while app is running");
+            let Ok(plane_transform) = ctx.plane_query.single() else {
+                return (Vec3::ZERO, Quat::IDENTITY, scale, Visibility::Hidden);
+            };
             let plane_local_x = cursor_x / cols - 0.5;
             let plane_local_y = 0.5 - (cursor_row + 0.5) / rows;
             let surface_z = plane_surface_z(

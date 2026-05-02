@@ -1,7 +1,7 @@
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ClearColorConfig;
-use bevy::ecs::system::SystemParam;
 use bevy::ecs::query::With;
+use bevy::ecs::system::SystemParam;
 use bevy::image::ImageSampler;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
@@ -98,35 +98,36 @@ pub struct ModelLoadState {
     pub first_frame_uploaded: bool,
 }
 
-type SpriteVisibilityQuery<'w, 's> =
-    Query<'w, 's, &'static mut Visibility, With<TerminalSprite>>;
-type PlaneVisibilityQuery<'w, 's> =
-    Query<'w, 's, &'static mut Visibility, With<TerminalPlane>>;
+type SpriteVisibilityQuery<'w, 's> = Query<'w, 's, &'static mut Visibility, With<TerminalSprite>>;
+type PlaneVisibilityQuery<'w, 's> = Query<'w, 's, &'static mut Visibility, With<TerminalPlane>>;
 type PlaneBackVisibilityQuery<'w, 's> =
     Query<'w, 's, &'static mut Visibility, With<TerminalPlaneBack>>;
-type PlaneTransformQuery<'w, 's> =
-    Query<'w, 's, &'static mut Transform, With<TerminalPlane>>;
+type PlaneTransformQuery<'w, 's> = Query<'w, 's, &'static mut Transform, With<TerminalPlane>>;
 type PlaneBackTransformQuery<'w, 's> =
     Query<'w, 's, &'static mut Transform, With<TerminalPlaneBack>>;
-type PlaneCameraQuery<'w, 's> = Query<
-    'w,
-    's,
-    (&'static mut Projection, &'static mut Transform),
-    With<TerminalPlaneCamera>,
->;
+type PlaneCameraQuery<'w, 's> =
+    Query<'w, 's, (&'static mut Projection, &'static mut Transform), With<TerminalPlaneCamera>>;
 
 #[derive(SystemParam)]
 pub(crate) struct PresentationParams<'w, 's> {
-    visibility_queries: ParamSet<'w, 's, (
-        SpriteVisibilityQuery<'w, 's>,
-        PlaneVisibilityQuery<'w, 's>,
-        PlaneBackVisibilityQuery<'w, 's>,
-    )>,
-    plane_transforms: ParamSet<'w, 's, (
-        PlaneTransformQuery<'w, 's>,
-        PlaneBackTransformQuery<'w, 's>,
-        PlaneCameraQuery<'w, 's>,
-    )>,
+    visibility_queries: ParamSet<
+        'w,
+        's,
+        (
+            SpriteVisibilityQuery<'w, 's>,
+            PlaneVisibilityQuery<'w, 's>,
+            PlaneBackVisibilityQuery<'w, 's>,
+        ),
+    >,
+    plane_transforms: ParamSet<
+        'w,
+        's,
+        (
+            PlaneTransformQuery<'w, 's>,
+            PlaneBackTransformQuery<'w, 's>,
+            PlaneCameraQuery<'w, 's>,
+        ),
+    >,
 }
 
 pub fn setup_scene(

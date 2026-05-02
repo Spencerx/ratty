@@ -51,13 +51,7 @@ impl Callbacks for TerminalParserCallbacks {
         }
     }
 
-    fn unhandled_escape(
-        &mut self,
-        _: &mut Screen,
-        i1: Option<u8>,
-        i2: Option<u8>,
-        b: u8,
-    ) {
+    fn unhandled_escape(&mut self, _: &mut Screen, i1: Option<u8>, i2: Option<u8>, b: u8) {
         let mut sequence = String::from("\u{1b}");
         if let Some(i1) = i1 {
             sequence.push(i1 as char);
