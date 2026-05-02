@@ -1,6 +1,7 @@
 [package]
 name = "ratty"
 version = "0.1.0"
+description = "A GPU-rendered terminal emulator that supports inline 3D graphics"
 edition = "2024"
 
 [dependencies]

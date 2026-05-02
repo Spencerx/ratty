@@ -1,8 +1,12 @@
 # ratty 🐁
 
-![Built with Ratatui badge](https://img.shields.io/badge/Built_With-Ratatui-000?logo=ratatui&logoColor=fff&labelColor=000&color=fff)
+**A GPU-rendered terminal emulator that supports inline 3D graphics.**
+<br>
+<sup>
+Inspired by TempleOS | Built with Rust & Ratatui
+</sup>
 
-Under construction ⚠️ Cheese ahead! 🧀
+![Built with Ratatui badge](https://img.shields.io/badge/Built_With-Ratatui-000?logo=ratatui&logoColor=fff&labelColor=000&color=fff)
 
 <div>
   <video src="https://github.com/user-attachments/assets/ebe4dc54-ec60-4399-a63e-0d04b3013433" alt="Ratty Demo"/>
