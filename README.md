@@ -3,7 +3,7 @@
 **A GPU-rendered terminal emulator that supports inline 3D graphics** 🧀
 <br>
 <sup>
-Inspired by TempleOS | Built with Rust & Ratatui
+Inspired by <b>TempleOS</b> | Built with <b>Rust</b> & <b>Ratatui</b>
 </sup>
 
 ![Built with Ratatui badge](https://img.shields.io/badge/Built_With-Ratatui-000?logo=ratatui&logoColor=fff&labelColor=000&color=fff)
