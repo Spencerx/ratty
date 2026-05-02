@@ -143,6 +143,10 @@ impl TerminalSurface {
         true
     }
 
+    pub fn font_size(&self) -> i32 {
+        self.font.size
+    }
+
     pub fn resize(&mut self, cols: u16, rows: u16) {
         if cols == 0 || rows == 0 {
             return;

@@ -135,6 +135,8 @@ pub enum BindingAction {
     IncreaseFontSize,
     #[serde(rename = "DecreaseFontSize")]
     DecreaseFontSize,
+    #[serde(rename = "ResetFontSize")]
+    ResetFontSize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -150,7 +152,7 @@ impl Default for FontConfig {
         Self {
             family: "DejaVu Sans Mono".to_string(),
             style: FontStyleConfig::Regular,
-            size: 14,
+            size: 18,
         }
     }
 }

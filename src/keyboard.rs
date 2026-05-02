@@ -6,7 +6,7 @@ use bevy::prelude::*;
 
 use arboard::Clipboard;
 
-use crate::config::{AppConfig, BindingAction, KeyBindingConfig};
+use crate::config::{AppConfig, BindingAction, FontConfig, KeyBindingConfig};
 use crate::mouse::TerminalSelection;
 use crate::runtime::TerminalRuntime;
 use crate::scene::{TerminalPlaneWarp, TerminalPresentation, TerminalViewport};
@@ -127,6 +127,24 @@ impl FromWorld for TerminalKeyBindings {
                     ..default()
                 },
                 BindingAction::DecreaseFontSize,
+            ),
+            KeyBinding::new(
+                KeyCode::Digit0,
+                BindingModifiers {
+                    control: true,
+                    alt: true,
+                    ..default()
+                },
+                BindingAction::ResetFontSize,
+            ),
+            KeyBinding::new(
+                KeyCode::Numpad0,
+                BindingModifiers {
+                    control: true,
+                    alt: true,
+                    ..default()
+                },
+                BindingAction::ResetFontSize,
             ),
         ];
 
@@ -253,6 +271,7 @@ pub fn handle_keyboard_input(
                     action,
                     BindingAction::IncreaseFontSize
                         | BindingAction::DecreaseFontSize
+                        | BindingAction::ResetFontSize
                         | BindingAction::IncreaseWarp
                         | BindingAction::DecreaseWarp
                 )
@@ -306,13 +325,20 @@ pub fn handle_keyboard_input(
                     }
                     continue;
                 }
-                BindingAction::IncreaseFontSize | BindingAction::DecreaseFontSize => {
-                    let delta = if action == BindingAction::IncreaseFontSize {
-                        1
-                    } else {
-                        -1
+                BindingAction::IncreaseFontSize
+                | BindingAction::DecreaseFontSize
+                | BindingAction::ResetFontSize => {
+                    let resized = match action {
+                        BindingAction::IncreaseFontSize => params.terminal.adjust_font_size(1),
+                        BindingAction::DecreaseFontSize => params.terminal.adjust_font_size(-1),
+                        BindingAction::ResetFontSize => {
+                            let target = FontConfig::default().size;
+                            let delta = target - params.terminal.font_size();
+                            delta != 0 && params.terminal.adjust_font_size(delta)
+                        }
+                        _ => false,
                     };
-                    if params.terminal.adjust_font_size(delta) {
+                    if resized {
                         let char_dims = params.terminal.char_dimensions().max(UVec2::ONE);
                         let cols =
                             ((params.viewport.size.x / char_dims.x as f32).floor() as u16).max(1);
