@@ -148,7 +148,7 @@ pub struct FontConfig {
 impl Default for FontConfig {
     fn default() -> Self {
         Self {
-            family: "JetBrainsMono Nerd Font Mono".to_string(),
+            family: "DejaVu Sans Mono".to_string(),
             style: FontStyleConfig::Regular,
             size: 14,
         }
