@@ -1,6 +1,6 @@
 # ratty 🐁
 
-**A GPU-rendered terminal emulator that supports inline 3D graphics.**
+**A GPU-rendered terminal emulator that supports inline 3D graphics** 🧀
 <br>
 <sup>
 Inspired by TempleOS | Built with Rust & Ratatui
