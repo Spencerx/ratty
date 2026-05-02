@@ -179,6 +179,10 @@ pub struct ThemeConfig {
     pub background: [u8; 3],
     #[serde(deserialize_with = "deserialize_hex_color")]
     pub cursor: [u8; 3],
+    #[serde(default = "ThemePaletteConfig::default_normal")]
+    pub normal: ThemePaletteConfig,
+    #[serde(default = "ThemePaletteConfig::default_bright")]
+    pub bright: ThemePaletteConfig,
 }
 
 impl Default for ThemeConfig {
@@ -187,6 +191,79 @@ impl Default for ThemeConfig {
             foreground: [220, 215, 186],
             background: [31, 31, 40],
             cursor: [126, 156, 216],
+            normal: ThemePaletteConfig::default_normal(),
+            bright: ThemePaletteConfig::default_bright(),
+        }
+    }
+}
+
+impl ThemeConfig {
+    pub fn palette(&self) -> [[u8; 3]; 16] {
+        [
+            self.normal.black,
+            self.normal.red,
+            self.normal.green,
+            self.normal.yellow,
+            self.normal.blue,
+            self.normal.magenta,
+            self.normal.cyan,
+            self.normal.white,
+            self.bright.black,
+            self.bright.red,
+            self.bright.green,
+            self.bright.yellow,
+            self.bright.blue,
+            self.bright.magenta,
+            self.bright.cyan,
+            self.bright.white,
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ThemePaletteConfig {
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub black: [u8; 3],
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub red: [u8; 3],
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub green: [u8; 3],
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub yellow: [u8; 3],
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub blue: [u8; 3],
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub magenta: [u8; 3],
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub cyan: [u8; 3],
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub white: [u8; 3],
+}
+
+impl ThemePaletteConfig {
+    pub fn default_normal() -> Self {
+        Self {
+            black: [0, 0, 0],
+            red: [205, 49, 49],
+            green: [13, 188, 121],
+            yellow: [229, 229, 16],
+            blue: [36, 114, 200],
+            magenta: [188, 63, 188],
+            cyan: [17, 168, 205],
+            white: [229, 229, 229],
+        }
+    }
+
+    pub fn default_bright() -> Self {
+        Self {
+            black: [102, 102, 102],
+            red: [241, 76, 76],
+            green: [35, 209, 139],
+            yellow: [245, 245, 67],
+            blue: [59, 142, 234],
+            magenta: [214, 112, 214],
+            cyan: [41, 184, 219],
+            white: [255, 255, 255],
         }
     }
 }

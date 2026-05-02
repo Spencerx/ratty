@@ -242,6 +242,9 @@ impl TerminalSurface {
 }
 
 fn build_terminal_renderer(font: &FontConfig, theme_config: &ThemeConfig) -> TerminalRenderer {
+    let palette = theme_config
+        .palette()
+        .map(|[r, g, b]| parley_ratatui::Rgba::rgb(r, g, b));
     let theme = parley_ratatui::Theme {
         foreground: parley_ratatui::Rgba::rgb(
             theme_config.foreground[0],
@@ -258,7 +261,7 @@ fn build_terminal_renderer(font: &FontConfig, theme_config: &ThemeConfig) -> Ter
             theme_config.cursor[1],
             theme_config.cursor[2],
         ),
-        ..parley_ratatui::Theme::default()
+        palette,
     };
     let font_options = FontOptions::default().with_family(font.family.clone());
     TerminalRenderer::new(
@@ -273,14 +276,18 @@ fn build_terminal_renderer(font: &FontConfig, theme_config: &ThemeConfig) -> Ter
 pub struct TerminalWidget<'a> {
     pub screen: &'a vt100::Screen,
     pub selection: &'a TerminalSelection,
-    pub theme_fg: TuiColor,
-    pub theme_bg: TuiColor,
+    pub theme: &'a ThemeConfig,
     pub font_style: FontStyleConfig,
 }
 
 impl Widget for TerminalWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        buf.set_style(area, Style::default().fg(self.theme_fg).bg(self.theme_bg));
+        let [fg_r, fg_g, fg_b] = self.theme.foreground;
+        let [bg_r, bg_g, bg_b] = self.theme.background;
+        let theme_fg = TuiColor::Rgb(fg_r, fg_g, fg_b);
+        let theme_bg = TuiColor::Rgb(bg_r, bg_g, bg_b);
+        let theme_palette = self.theme.palette().map(|[r, g, b]| TuiColor::Rgb(r, g, b));
+        buf.set_style(area, Style::default().fg(theme_fg).bg(theme_bg));
 
         let selection = self.selection.normalized_bounds();
         let (rows, cols) = self.screen.size();
@@ -297,7 +304,7 @@ impl Widget for TerminalWidget<'_> {
                 }
 
                 let mut style =
-                    vt100_cell_style(vt_cell, self.theme_fg, self.theme_bg, self.font_style);
+                    vt100_cell_style(vt_cell, &theme_palette, theme_fg, theme_bg, self.font_style);
                 let symbol = if vt_cell.has_contents() {
                     vt_cell.contents()
                 } else {
@@ -318,13 +325,14 @@ impl Widget for TerminalWidget<'_> {
 
 fn vt100_cell_style(
     cell: &vt100::Cell,
+    theme_palette: &[TuiColor; 16],
     theme_fg: TuiColor,
     theme_bg: TuiColor,
     font_style: FontStyleConfig,
 ) -> Style {
     let mut style = Style::default()
-        .fg(vt100_color_to_tui(cell.fgcolor()).unwrap_or(theme_fg))
-        .bg(vt100_color_to_tui(cell.bgcolor()).unwrap_or(theme_bg));
+        .fg(vt100_color_to_tui(cell.fgcolor(), theme_palette).unwrap_or(theme_fg))
+        .bg(vt100_color_to_tui(cell.bgcolor(), theme_palette).unwrap_or(theme_bg));
 
     let mut modifiers = match font_style {
         FontStyleConfig::Regular => Modifier::empty(),
@@ -352,32 +360,17 @@ fn vt100_cell_style(
     style
 }
 
-fn vt100_color_to_tui(color: vt100::Color) -> Option<TuiColor> {
+fn vt100_color_to_tui(color: vt100::Color, theme_palette: &[TuiColor; 16]) -> Option<TuiColor> {
     match color {
         vt100::Color::Default => None,
-        vt100::Color::Idx(index) => Some(ansi_index_to_tui(index)),
+        vt100::Color::Idx(index) => Some(ansi_index_to_tui(index, theme_palette)),
         vt100::Color::Rgb(r, g, b) => Some(TuiColor::Rgb(r, g, b)),
     }
 }
 
-fn ansi_index_to_tui(index: u8) -> TuiColor {
+fn ansi_index_to_tui(index: u8, theme_palette: &[TuiColor; 16]) -> TuiColor {
     match index {
-        0 => TuiColor::Black,
-        1 => TuiColor::Red,
-        2 => TuiColor::Green,
-        3 => TuiColor::Yellow,
-        4 => TuiColor::Blue,
-        5 => TuiColor::Magenta,
-        6 => TuiColor::Cyan,
-        7 => TuiColor::Gray,
-        8 => TuiColor::DarkGray,
-        9 => TuiColor::LightRed,
-        10 => TuiColor::LightGreen,
-        11 => TuiColor::LightYellow,
-        12 => TuiColor::LightBlue,
-        13 => TuiColor::LightMagenta,
-        14 => TuiColor::LightCyan,
-        15 => TuiColor::White,
+        0..=15 => theme_palette[index as usize],
         16..=231 => {
             let index = index - 16;
             let r = index / 36;

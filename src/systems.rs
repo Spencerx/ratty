@@ -11,8 +11,6 @@ use bevy::prelude::*;
 use bevy::render::render_resource::PrimitiveTopology;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::window::{PrimaryWindow, WindowResized};
-use ratatui::style::Color as TuiColor;
-
 use crate::config::{AppConfig, CURSOR_DEPTH};
 use crate::inline::{
     InlineObject, TerminalInlineObjectPlane, TerminalInlineObjectSprite, TerminalInlineObjects,
@@ -287,23 +285,12 @@ pub fn redraw_soft_terminal(mut params: RedrawParams) {
     }
 
     let screen = runtime.parser.screen();
-    let theme_fg = TuiColor::Rgb(
-        app_config.theme.foreground[0],
-        app_config.theme.foreground[1],
-        app_config.theme.foreground[2],
-    );
-    let theme_bg = TuiColor::Rgb(
-        app_config.theme.background[0],
-        app_config.theme.background[1],
-        app_config.theme.background[2],
-    );
     let _ = terminal.tui.draw(|frame| {
         frame.render_widget(
             TerminalWidget {
                 screen,
                 selection,
-                theme_fg,
-                theme_bg,
+                theme: &app_config.theme,
                 font_style: app_config.font.style,
             },
             frame.area(),
