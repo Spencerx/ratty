@@ -18,17 +18,42 @@ use crate::config::AppConfig;
 pub struct TerminalParserCallbacks {
     seen_csi: HashSet<String>,
     seen_escape: HashSet<String>,
+    pending_replies: Vec<Vec<u8>>,
+}
+
+impl TerminalParserCallbacks {
+    /// Drains any terminal replies queued by parser callbacks.
+    pub fn take_replies(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.pending_replies)
+    }
 }
 
 impl Callbacks for TerminalParserCallbacks {
     fn unhandled_csi(
         &mut self,
-        _: &mut Screen,
+        screen: &mut Screen,
         i1: Option<u8>,
         i2: Option<u8>,
         params: &[&[u16]],
         c: char,
     ) {
+        // CSI 6 n = cursor position report request.
+        if i1.is_none() && i2.is_none() && c == 'n' && params.len() == 1 && params[0] == [6] {
+            let (row, col) = screen.cursor_position();
+            self.pending_replies
+                .push(format!("\x1b[{};{}R", row + 1, col + 1).into_bytes());
+            return;
+        }
+
+        if i1 == Some(b'?')
+            && i2.is_none()
+            && params.len() == 1
+            && params[0] == [7]
+            && matches!(c, 'h' | 'l')
+        {
+            return;
+        }
+
         let mut sequence = String::from("\u{1b}[");
         if let Some(i1) = i1 {
             sequence.push(i1 as char);

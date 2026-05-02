@@ -128,7 +128,8 @@ pub fn pump_pty_output(
             Ok(chunk) => {
                 let prev_rows = (!inline_objects.anchors.is_empty())
                     .then(|| screen_rows(runtime.parser.screen()));
-                let replies = inline_objects.consume_pty_output(&chunk, &mut runtime.parser);
+                let mut replies = inline_objects.consume_pty_output(&chunk, &mut runtime.parser);
+                replies.extend(runtime.parser.callbacks_mut().take_replies());
                 for reply in replies {
                     runtime.write_input(&reply);
                 }
