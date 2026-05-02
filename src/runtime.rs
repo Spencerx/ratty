@@ -37,6 +37,18 @@ impl Callbacks for TerminalParserCallbacks {
         params: &[&[u16]],
         c: char,
     ) {
+        // CSI 0 c = primary device attributes request.
+        if i1.is_none() && i2.is_none() && c == 'c' && params.len() == 1 && params[0] == [0] {
+            self.pending_replies.push(b"\x1b[?1;2c".to_vec());
+            return;
+        }
+
+        // CSI 5 n = device status report request.
+        if i1.is_none() && i2.is_none() && c == 'n' && params.len() == 1 && params[0] == [5] {
+            self.pending_replies.push(b"\x1b[0n".to_vec());
+            return;
+        }
+
         // CSI 6 n = cursor position report request.
         if i1.is_none() && i2.is_none() && c == 'n' && params.len() == 1 && params[0] == [6] {
             let (row, col) = screen.cursor_position();
