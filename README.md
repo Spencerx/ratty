@@ -1,12 +1,14 @@
-# ratty 🐁
-
-**A GPU-rendered terminal emulator that supports inline 3D graphics** 🧀
+<p align="center">
+<img width="300" src="https://github.com/user-attachments/assets/b58d9a64-6c3a-4bdb-b00b-34a6a5448611" />
+<br>
+<b>Ratty: A GPU-rendered terminal emulator that supports inline 3D graphics</b> 🧀
 <br>
 <sup>
 Inspired by TempleOS | Built with Rust & Ratatui
 </sup>
-
-![Built with Ratatui badge](https://img.shields.io/badge/Built_With-Ratatui-000?logo=ratatui&logoColor=fff&labelColor=000&color=fff)
+<br>
+<img src="https://img.shields.io/badge/Built_With-Ratatui-000?logo=ratatui&amp;logoColor=fff&amp;labelColor=201a16&amp;color=ffd970" alt="Built with Ratatui badge">
+</p>
 
 <div>
   <video src="https://github.com/user-attachments/assets/ebe4dc54-ec60-4399-a63e-0d04b3013433" alt="Ratty Demo"/>
@@ -172,6 +174,10 @@ All code is licensed under <a href="LICENSE">The MIT License</a>.
 <sup>
 🦀 ノ( º \_ º ノ) - respect crables!
 </sup>
+
+## Credits
+
+Ratty logo designed by [@Strophox](https://github.com/Strophox) & [@Harunocaksiz](https://github.com/harunocaksiz)
 
 ## Copyright
 
