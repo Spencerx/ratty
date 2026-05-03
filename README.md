@@ -1,5 +1,5 @@
 <p align="center">
-<img width="300" src="https://github.com/user-attachments/assets/b58d9a64-6c3a-4bdb-b00b-34a6a5448611" />
+<img width="300" src="https://raw.githubusercontent.com/orhun/ratty/refs/heads/main/assets/img/ratty-logo.gif" />
 <br>
 <b>Ratty: A GPU-rendered terminal emulator that supports inline 3D graphics</b> 🧀
 <br>
