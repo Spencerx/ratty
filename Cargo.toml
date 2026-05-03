@@ -2,6 +2,13 @@
 name = "ratty"
 version = "0.1.0-rc.0"
 description = "A GPU-rendered terminal emulator that supports inline 3D graphics"
+authors = ["Orhun Parmaksız <orhunparmaksiz@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/orhun/ratty"
+repository = "https://github.com/orhun/ratty"
+keywords = ["terminal", "emulator", "3d", "graphics" ]
+categories = ["command-line-utilities", "graphics"]
 edition = "2024"
 
 [dependencies]
