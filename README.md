@@ -168,6 +168,14 @@ Bevy's render-world device instead of using the current readback bridge.
 
 - _"No comments. Just support."_ - [@Raphamorim](https://github.com/raphamorim/) (creator of Rio terminal)
 
+- _"[tetro-tui](https://github.com/Strophox/tetro-tui) running in Ratty"_ - [@Strophox](https://github.com/Strophox)
+
+<div>
+
+<video width="80%" src="https://github.com/user-attachments/assets/bdc55f35-64eb-4a14-8bb1-4f8719f14644">
+
+</div>
+
 ## License
 
 All code is licensed under <a href="LICENSE">The MIT License</a>.
