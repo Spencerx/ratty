@@ -19,12 +19,24 @@ pub struct TerminalParserCallbacks {
     seen_csi: HashSet<String>,
     seen_escape: HashSet<String>,
     pending_replies: Vec<Vec<u8>>,
+    kitty_keyboard_flags: u8,
+    modify_other_keys: Option<u8>,
 }
 
 impl TerminalParserCallbacks {
     /// Drains any terminal replies queued by parser callbacks.
     pub fn take_replies(&mut self) -> Vec<Vec<u8>> {
         std::mem::take(&mut self.pending_replies)
+    }
+
+    /// Returns the active kitty keyboard enhancement flags.
+    pub fn kitty_keyboard_flags(&self) -> u8 {
+        self.kitty_keyboard_flags
+    }
+
+    /// Returns the active xterm `modifyOtherKeys` level.
+    pub fn modify_other_keys(&self) -> Option<u8> {
+        self.modify_other_keys
     }
 }
 
@@ -57,6 +69,45 @@ impl Callbacks for TerminalParserCallbacks {
             return;
         }
 
+        // CSI ? u = kitty keyboard protocol flag query. Reply with the currently active flags so
+        // apps can detect whether enhanced key reporting is enabled.
+        if i1 == Some(b'?') && i2.is_none() && c == 'u' && params.is_empty() {
+            self.pending_replies
+                .push(format!("\x1b[?{}u", self.kitty_keyboard_flags).into_bytes());
+            return;
+        }
+
+        // CSI > flags u = enable kitty keyboard protocol flags for subsequent key reports.
+        if i1 == Some(b'>') && i2.is_none() && c == 'u' && params.len() == 1 && params[0].len() == 1
+        {
+            self.kitty_keyboard_flags = params[0][0].min(u8::MAX as u16) as u8;
+            return;
+        }
+
+        // CSI < 1 u = pop kitty keyboard enhancement state and fall back to legacy reporting.
+        if i1 == Some(b'<') && i2.is_none() && c == 'u' && params.len() == 1 && params[0] == [1] {
+            self.kitty_keyboard_flags = 0;
+            return;
+        }
+
+        // CSI > 4 ; level m = xterm modifyOtherKeys mode. We track the current level so keys like
+        // Ctrl+Enter can be encoded in the form the foreground app asked for.
+        if i1 == Some(b'>') && i2.is_none() && c == 'm' {
+            match params {
+                [resource, level] if *resource == [4] && level.len() == 1 => {
+                    self.modify_other_keys = Some(level[0].min(u8::MAX as u16) as u8);
+                    return;
+                }
+                [resource] if *resource == [4] => {
+                    self.modify_other_keys = None;
+                    return;
+                }
+                _ => {}
+            }
+        }
+
+        // CSI ? 7 h / CSI ? 7 l toggle line wrapping. Ratty does not model the mode yet, but
+        // treating it as known avoids noisy warnings for shells and TUIs that flip it frequently.
         if i1 == Some(b'?')
             && i2.is_none()
             && params.len() == 1
@@ -230,5 +281,15 @@ impl TerminalRuntime {
             pixel_height: 0,
         });
         self.parser.screen_mut().set_size(rows, cols);
+    }
+
+    /// Returns the active kitty keyboard enhancement flags.
+    pub fn kitty_keyboard_flags(&self) -> u8 {
+        self.parser.callbacks().kitty_keyboard_flags()
+    }
+
+    /// Returns the active xterm `modifyOtherKeys` level.
+    pub fn modify_other_keys(&self) -> Option<u8> {
+        self.parser.callbacks().modify_other_keys()
     }
 }

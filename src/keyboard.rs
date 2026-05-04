@@ -202,6 +202,8 @@ impl TerminalKeyboard {
         &mut self,
         event: &KeyboardInput,
         application_cursor: bool,
+        kitty_keyboard_flags: u8,
+        modify_other_keys: Option<u8>,
     ) -> Option<Vec<u8>> {
         match event.key_code {
             KeyCode::ControlLeft | KeyCode::ControlRight => {
@@ -233,23 +235,18 @@ impl TerminalKeyboard {
             event.text.as_deref(),
             self.ctrl_pressed,
             self.alt_pressed,
+            self.shift_pressed,
             application_cursor,
+            kitty_keyboard_flags,
+            modify_other_keys,
         ))
-    }
-
-    fn modifiers(&self) -> BindingModifiers {
-        BindingModifiers {
-            control: self.ctrl_pressed,
-            alt: self.alt_pressed,
-            shift: self.shift_pressed,
-            super_key: self.super_pressed,
-        }
     }
 }
 
 /// Keyboard input system parameters.
 #[derive(SystemParam)]
 pub struct KeyboardSystemParams<'w, 's> {
+    keys: Res<'w, ButtonInput<KeyCode>>,
     selection: ResMut<'w, TerminalSelection>,
     plane_warp: ResMut<'w, TerminalPlaneWarp>,
     presentation: ResMut<'w, TerminalPresentation>,
@@ -269,10 +266,13 @@ pub fn handle_keyboard_input(
     mut params: KeyboardSystemParams,
 ) {
     for event in keyboard_events.read() {
+        // Use Bevy's live pressed-key state for shortcut matching so bindings remain correct even
+        // if a modifier press/release event was missed or arrived in a different order.
+        let modifiers = current_modifiers(&params.keys);
         if event.state == ButtonState::Pressed
             && let Some(action) = params
                 .bindings
-                .action_for(event.key_code, keyboard.modifiers())
+                .action_for(event.key_code, modifiers)
         {
             if event.repeat
                 && !matches!(
@@ -369,10 +369,24 @@ pub fn handle_keyboard_input(
         }
 
         if let Some(input) = keyboard
-            .handle_event_with_modes(event, params.runtime.parser.screen().application_cursor())
+            .handle_event_with_modes(
+                event,
+                params.runtime.parser.screen().application_cursor(),
+                params.runtime.kitty_keyboard_flags(),
+                params.runtime.modify_other_keys(),
+            )
         {
             params.runtime.write_input(&input);
         }
+    }
+}
+
+fn current_modifiers(keys: &ButtonInput<KeyCode>) -> BindingModifiers {
+    BindingModifiers {
+        control: keys.any_pressed([KeyCode::ControlLeft, KeyCode::ControlRight]),
+        alt: keys.any_pressed([KeyCode::AltLeft, KeyCode::AltRight]),
+        shift: keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]),
+        super_key: keys.any_pressed([KeyCode::SuperLeft, KeyCode::SuperRight]),
     }
 }
 
@@ -469,7 +483,10 @@ fn translate_key(
     text: Option<&str>,
     ctrl_pressed: bool,
     alt_pressed: bool,
+    shift_pressed: bool,
     application_cursor: bool,
+    kitty_keyboard_flags: u8,
+    modify_other_keys: Option<u8>,
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
 
@@ -478,6 +495,21 @@ fn translate_key(
             bytes.push(0x1b);
         }
         bytes.push(ctrl);
+        return bytes;
+    }
+
+    // Kitty flag bit 0 requests disambiguated escape codes, which gives us an unambiguous
+    // encoding for modified special keys such as Ctrl+Enter.
+    let kitty_disambiguate = kitty_keyboard_flags & 1 != 0;
+    if let Some(sequence) = encode_modified_special_key(
+        key_code,
+        ctrl_pressed,
+        alt_pressed,
+        shift_pressed,
+        kitty_disambiguate,
+        modify_other_keys,
+    ) {
+        bytes.extend_from_slice(&sequence);
         return bytes;
     }
 
@@ -554,6 +586,43 @@ fn translate_key(
     }
 
     bytes
+}
+
+fn encode_modified_special_key(
+    key_code: KeyCode,
+    ctrl_pressed: bool,
+    alt_pressed: bool,
+    shift_pressed: bool,
+    kitty_disambiguate: bool,
+    modify_other_keys: Option<u8>,
+) -> Option<Vec<u8>> {
+    let codepoint = match key_code {
+        KeyCode::Enter | KeyCode::NumpadEnter => 13,
+        KeyCode::Tab => 9,
+        KeyCode::Backspace => 127,
+        KeyCode::Escape => 27,
+        _ => return None,
+    };
+
+    if !ctrl_pressed && !alt_pressed && !shift_pressed {
+        return None;
+    }
+
+    let modifier_code =
+        1 + shift_pressed as u8 + (alt_pressed as u8 * 2) + (ctrl_pressed as u8 * 4);
+
+    // Kitty keyboard protocol uses CSI codepoint ; modifiers u for modified special keys.
+    if kitty_disambiguate {
+        return Some(format!("\x1b[{};{}u", codepoint, modifier_code).into_bytes());
+    }
+
+    // xterm modifyOtherKeys falls back to CSI 27 ; modifiers ; codepoint ~ for the same class of
+    // keys when the foreground app explicitly enabled that mode.
+    if modify_other_keys.is_some() {
+        return Some(format!("\x1b[27;{};{}~", modifier_code, codepoint).into_bytes());
+    }
+
+    None
 }
 
 fn is_modifier_key(key: KeyCode) -> bool {
