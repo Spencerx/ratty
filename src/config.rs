@@ -92,6 +92,8 @@ pub struct WindowConfig {
     pub height: u32,
     /// Window scale-factor override.
     pub scale_factor: f32,
+    /// Window opacity from `0.0` to `1.0`.
+    pub opacity: f32,
 }
 
 impl Default for WindowConfig {
@@ -100,6 +102,7 @@ impl Default for WindowConfig {
             width: 960,
             height: 620,
             scale_factor: 1.0,
+            opacity: 1.0,
         }
     }
 }

@@ -65,6 +65,7 @@ pub struct TerminalSurface {
     /// Terminal row count.
     pub rows: u16,
     cursor_model_visible: bool,
+    window_opacity: f32,
     font: FontConfig,
     theme: ThemeConfig,
     renderer: TerminalRenderer,
@@ -140,7 +141,8 @@ impl TerminalSurface {
         } else {
             tui.show_cursor()?;
         }
-        let renderer = build_terminal_renderer(&config.font, &config.theme);
+        let renderer =
+            build_terminal_renderer(&config.font, &config.theme, config.window.opacity);
 
         Ok(Self {
             tui,
@@ -149,6 +151,7 @@ impl TerminalSurface {
             cols,
             rows,
             cursor_model_visible: config.cursor.model.visible,
+            window_opacity: config.window.opacity.clamp(0.0, 1.0),
             font: config.font.clone(),
             theme: config.theme.clone(),
             renderer,
@@ -164,7 +167,7 @@ impl TerminalSurface {
         }
 
         self.font.size = new_size;
-        self.renderer = build_terminal_renderer(&self.font, &self.theme);
+        self.renderer = build_terminal_renderer(&self.font, &self.theme, self.window_opacity);
         if let Some(gpu) = self.gpu.as_mut() {
             let (width, height) = self
                 .renderer
@@ -283,7 +286,11 @@ impl TerminalSurface {
     }
 }
 
-fn build_terminal_renderer(font: &FontConfig, theme_config: &ThemeConfig) -> TerminalRenderer {
+fn build_terminal_renderer(
+    font: &FontConfig,
+    theme_config: &ThemeConfig,
+    window_opacity: f32,
+) -> TerminalRenderer {
     let palette = theme_config
         .palette()
         .map(|[r, g, b]| parley_ratatui::Rgba::rgb(r, g, b));
@@ -293,10 +300,11 @@ fn build_terminal_renderer(font: &FontConfig, theme_config: &ThemeConfig) -> Ter
             theme_config.foreground[1],
             theme_config.foreground[2],
         ),
-        background: parley_ratatui::Rgba::rgb(
+        background: parley_ratatui::Rgba::rgba(
             theme_config.background[0],
             theme_config.background[1],
             theme_config.background[2],
+            (window_opacity.clamp(0.0, 1.0) * 255.0).round() as u8,
         ),
         cursor: parley_ratatui::Rgba::rgb(
             theme_config.cursor[0],

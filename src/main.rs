@@ -20,10 +20,11 @@ fn main() -> anyhow::Result<()> {
     let terminal = TerminalSurface::new(&app_config)?;
 
     App::new()
-        .insert_resource(ClearColor(Color::srgb_u8(
+        .insert_resource(ClearColor(Color::srgba_u8(
             app_config.theme.background[0],
             app_config.theme.background[1],
             app_config.theme.background[2],
+            (app_config.window.opacity.clamp(0.0, 1.0) * 255.0).round() as u8,
         )))
         .insert_resource(app_config.clone())
         .insert_non_send_resource(runtime)
@@ -41,6 +42,7 @@ fn main() -> anyhow::Result<()> {
                         app_config.window.height,
                     )
                     .with_scale_factor_override(app_config.window.scale_factor),
+                    transparent: app_config.window.opacity < 1.0,
                     ..default()
                 }),
                 ..default()

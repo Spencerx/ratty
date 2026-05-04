@@ -2,6 +2,7 @@
 width = 960
 height = 620
 scale_factor = 1.0
+opacity = 0.8
 
 [terminal]
 default_cols = 104
