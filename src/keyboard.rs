@@ -517,65 +517,19 @@ fn translate_key(
         bytes.push(0x1b);
     }
 
+    let navigation_key = NavigationKey::from_key_code(key_code)
+        .or_else(|| NavigationKey::from_logical_key(logical_key));
+    if let Some(key) = navigation_key {
+        bytes.extend_from_slice(&key.encode(ctrl_pressed, application_cursor));
+        return bytes;
+    }
+
     match key_code {
         KeyCode::Enter | KeyCode::NumpadEnter => bytes.push(b'\r'),
         KeyCode::Tab => bytes.push(b'\t'),
         KeyCode::Space => bytes.push(b' '),
         KeyCode::Backspace => bytes.push(0x7f),
         KeyCode::Escape => bytes.push(0x1b),
-        KeyCode::ArrowUp => {
-            if ctrl_pressed {
-                bytes.extend_from_slice(b"\x1b[1;5A");
-            } else if application_cursor {
-                bytes.extend_from_slice(b"\x1bOA");
-            } else {
-                bytes.extend_from_slice(b"\x1b[A");
-            }
-        }
-        KeyCode::ArrowDown => {
-            if ctrl_pressed {
-                bytes.extend_from_slice(b"\x1b[1;5B");
-            } else if application_cursor {
-                bytes.extend_from_slice(b"\x1bOB");
-            } else {
-                bytes.extend_from_slice(b"\x1b[B");
-            }
-        }
-        KeyCode::ArrowRight => {
-            if ctrl_pressed {
-                bytes.extend_from_slice(b"\x1b[1;5C");
-            } else if application_cursor {
-                bytes.extend_from_slice(b"\x1bOC");
-            } else {
-                bytes.extend_from_slice(b"\x1b[C");
-            }
-        }
-        KeyCode::ArrowLeft => {
-            if ctrl_pressed {
-                bytes.extend_from_slice(b"\x1b[1;5D");
-            } else if application_cursor {
-                bytes.extend_from_slice(b"\x1bOD");
-            } else {
-                bytes.extend_from_slice(b"\x1b[D");
-            }
-        }
-        KeyCode::Delete => bytes.extend_from_slice(b"\x1b[3~"),
-        KeyCode::Home => {
-            if application_cursor {
-                bytes.extend_from_slice(b"\x1bOH");
-            } else {
-                bytes.extend_from_slice(b"\x1b[H");
-            }
-        }
-        KeyCode::End => {
-            if application_cursor {
-                bytes.extend_from_slice(b"\x1bOF");
-            } else {
-                bytes.extend_from_slice(b"\x1b[F");
-            }
-        }
-        KeyCode::PageUp => bytes.extend_from_slice(b"\x1b[5~"),
-        KeyCode::PageDown => bytes.extend_from_slice(b"\x1b[6~"),
         _ => {
             if let Some(text) = text {
                 bytes.extend_from_slice(text.as_bytes());
@@ -586,6 +540,116 @@ fn translate_key(
     }
 
     bytes
+}
+
+#[derive(Clone, Copy)]
+enum NavigationKey {
+    ArrowUp,
+    ArrowDown,
+    ArrowRight,
+    ArrowLeft,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Insert,
+    Delete,
+}
+
+impl NavigationKey {
+    fn from_key_code(key_code: KeyCode) -> Option<Self> {
+        match key_code {
+            KeyCode::ArrowUp => Some(Self::ArrowUp),
+            KeyCode::ArrowDown => Some(Self::ArrowDown),
+            KeyCode::ArrowRight => Some(Self::ArrowRight),
+            KeyCode::ArrowLeft => Some(Self::ArrowLeft),
+            KeyCode::Home => Some(Self::Home),
+            KeyCode::End => Some(Self::End),
+            KeyCode::PageUp => Some(Self::PageUp),
+            KeyCode::PageDown => Some(Self::PageDown),
+            KeyCode::Insert => Some(Self::Insert),
+            KeyCode::Delete => Some(Self::Delete),
+            _ => None,
+        }
+    }
+
+    fn from_logical_key(logical_key: &Key) -> Option<Self> {
+        // Keypad navigation with numlock disabled often arrives as a Numpad physical key paired
+        // with a logical navigation key such as Home or PageUp. Use the logical meaning so keypad
+        // navigation behaves like the dedicated navigation cluster.
+        match logical_key {
+            Key::ArrowUp => Some(Self::ArrowUp),
+            Key::ArrowDown => Some(Self::ArrowDown),
+            Key::ArrowRight => Some(Self::ArrowRight),
+            Key::ArrowLeft => Some(Self::ArrowLeft),
+            Key::Home => Some(Self::Home),
+            Key::End => Some(Self::End),
+            Key::PageUp => Some(Self::PageUp),
+            Key::PageDown => Some(Self::PageDown),
+            Key::Insert => Some(Self::Insert),
+            Key::Delete => Some(Self::Delete),
+            _ => None,
+        }
+    }
+
+    fn encode(self, ctrl_pressed: bool, application_cursor: bool) -> Vec<u8> {
+        match self {
+            Self::ArrowUp => {
+                if ctrl_pressed {
+                    b"\x1b[1;5A".to_vec()
+                } else if application_cursor {
+                    b"\x1bOA".to_vec()
+                } else {
+                    b"\x1b[A".to_vec()
+                }
+            }
+            Self::ArrowDown => {
+                if ctrl_pressed {
+                    b"\x1b[1;5B".to_vec()
+                } else if application_cursor {
+                    b"\x1bOB".to_vec()
+                } else {
+                    b"\x1b[B".to_vec()
+                }
+            }
+            Self::ArrowRight => {
+                if ctrl_pressed {
+                    b"\x1b[1;5C".to_vec()
+                } else if application_cursor {
+                    b"\x1bOC".to_vec()
+                } else {
+                    b"\x1b[C".to_vec()
+                }
+            }
+            Self::ArrowLeft => {
+                if ctrl_pressed {
+                    b"\x1b[1;5D".to_vec()
+                } else if application_cursor {
+                    b"\x1bOD".to_vec()
+                } else {
+                    b"\x1b[D".to_vec()
+                }
+            }
+            Self::Home => {
+                if application_cursor {
+                    b"\x1bOH".to_vec()
+                } else {
+                    b"\x1b[1~".to_vec()
+                }
+            }
+            Self::End => {
+                if application_cursor {
+                    b"\x1bOF".to_vec()
+                } else {
+                    b"\x1b[4~".to_vec()
+                }
+            }
+            Self::PageUp => b"\x1b[5~".to_vec(),
+            Self::PageDown => b"\x1b[6~".to_vec(),
+            Self::Insert => b"\x1b[2~".to_vec(),
+            Self::Delete => b"\x1b[3~".to_vec(),
+        }
+    }
 }
 
 fn encode_modified_special_key(
