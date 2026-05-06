@@ -1177,6 +1177,11 @@ fn cursor_pose(
     let bob = (ctx.elapsed_secs * app_config.cursor.animation.bob_speed).sin()
         * cell_height
         * app_config.cursor.animation.bob_amplitude;
+    let plane_bob = if ctx.viewport.size.y > 0.0 {
+        bob / ctx.viewport.size.y
+    } else {
+        0.0
+    };
 
     let (translation, rotation, visibility) = match ctx.mode {
         TerminalPresentationMode::Flat2d => (
@@ -1193,7 +1198,7 @@ fn cursor_pose(
                 return (Vec3::ZERO, Quat::IDENTITY, scale, Visibility::Hidden);
             };
             let plane_local_x = cursor_x / cols - 0.5;
-            let plane_local_y = 0.5 - (cursor_row + 0.5) / rows;
+            let plane_local_y = 0.5 - (cursor_row + 0.5) / rows + plane_bob;
             let surface_z = plane_surface_z(
                 plane_local_x,
                 plane_local_y,
