@@ -44,8 +44,9 @@ pub fn spawn_cursor_model(
         ))
         .id();
 
+    let [r, g, b] = app_config.cursor.model.color;
     let material = materials.add(StandardMaterial {
-        base_color: Color::srgb_u8(255, 255, 255),
+        base_color: Color::srgb_u8(r, g, b),
         emissive: LinearRgba::rgb(0.35, 0.35, 0.35),
         metallic: 0.0,
         perceptual_roughness: 0.28,

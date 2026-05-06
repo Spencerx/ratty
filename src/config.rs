@@ -371,6 +371,9 @@ pub struct CursorModelConfig {
     pub plane_offset: f32,
     /// Cursor model brightness.
     pub brightness: f32,
+    /// Cursor model base color.
+    #[serde(deserialize_with = "deserialize_hex_color")]
+    pub color: [u8; 3],
     /// Cursor asset path.
     pub path: PathBuf,
 }
@@ -383,6 +386,7 @@ impl Default for CursorModelConfig {
             x_offset: 0.1,
             plane_offset: 18.0,
             brightness: 1.0,
+            color: [255, 255, 255],
             path: PathBuf::from("CairoSpinyMouse.obj"),
         }
     }
