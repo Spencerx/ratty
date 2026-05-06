@@ -1,6 +1,14 @@
 [package]
 name = "ratatui-ratty"
-version = "0.1.0"
+version = "0.1.0-rc.0"
+description = "A Ratatui widget for rendering inline 3D graphics via Ratty Graphics Protocol"
+authors = ["Orhun Parmaksız <orhunparmaksiz@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/orhun/ratty"
+repository = "https://github.com/orhun/ratty"
+keywords = ["ratatui", "terminal", "3d", "graphics"]
+categories = ["command-line-interface", "graphics"]
 edition = "2024"
 
 [dependencies]
