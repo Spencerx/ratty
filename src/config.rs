@@ -165,9 +165,12 @@ pub enum BindingAction {
     /// Disables a binding.
     #[serde(rename = "none")]
     None,
-    /// Toggles the presentation mode.
+    /// Toggles between the flat and warped terminal views.
     #[serde(rename = "ToggleMode")]
     ToggleMode,
+    /// Toggles the Mobius-strip terminal view.
+    #[serde(rename = "ToggleMobiusMode")]
+    ToggleMobiusMode,
     /// Increases plane warp.
     #[serde(rename = "IncreaseWarp")]
     IncreaseWarp,

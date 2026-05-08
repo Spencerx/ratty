@@ -7,7 +7,7 @@ use bevy::ecs::system::SystemParam;
 use bevy::image::ImageSampler;
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
-use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use bevy::render::render_resource::{Extent3d, Face, TextureDimension, TextureFormat};
 
 use crate::config::AppConfig;
 use crate::terminal::TerminalSurface;
@@ -67,6 +67,20 @@ pub enum TerminalPresentationMode {
     Flat2d,
     /// Warped 3D presentation.
     Plane3d,
+    /// Mobius-strip 3D presentation.
+    Mobius3d,
+}
+
+impl TerminalPresentationMode {
+    /// Returns whether the mode uses the 3D presentation camera and terminal plane.
+    pub const fn is_3d(self) -> bool {
+        !matches!(self, Self::Flat2d)
+    }
+
+    /// Returns whether the mode uses the Mobius-strip terminal surface.
+    pub const fn is_mobius(self) -> bool {
+        matches!(self, Self::Mobius3d)
+    }
 }
 
 /// Active terminal presentation.
@@ -77,11 +91,23 @@ pub struct TerminalPresentation {
 }
 
 impl TerminalPresentation {
-    /// Toggles the presentation mode.
-    pub fn toggle(&mut self) {
+    /// Toggles between the flat and warped 3D terminal views.
+    pub fn toggle_plane_mode(&mut self) {
         self.mode = match self.mode {
             TerminalPresentationMode::Flat2d => TerminalPresentationMode::Plane3d,
-            TerminalPresentationMode::Plane3d => TerminalPresentationMode::Flat2d,
+            TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d => {
+                TerminalPresentationMode::Flat2d
+            }
+        };
+    }
+
+    /// Toggles the Mobius-strip terminal view.
+    pub fn toggle_mobius_mode(&mut self) {
+        self.mode = match self.mode {
+            TerminalPresentationMode::Mobius3d => TerminalPresentationMode::Flat2d,
+            TerminalPresentationMode::Flat2d | TerminalPresentationMode::Plane3d => {
+                TerminalPresentationMode::Mobius3d
+            }
         };
     }
 }
@@ -135,6 +161,8 @@ type SpriteVisibilityQuery<'w, 's> = Query<'w, 's, &'static mut Visibility, With
 type PlaneVisibilityQuery<'w, 's> = Query<'w, 's, &'static mut Visibility, With<TerminalPlane>>;
 type PlaneBackVisibilityQuery<'w, 's> =
     Query<'w, 's, &'static mut Visibility, With<TerminalPlaneBack>>;
+type PlaneMaterialQuery<'w, 's> =
+    Query<'w, 's, &'static MeshMaterial3d<StandardMaterial>, With<TerminalPlane>>;
 type PlaneTransformQuery<'w, 's> = Query<'w, 's, &'static mut Transform, With<TerminalPlane>>;
 type PlaneBackTransformQuery<'w, 's> =
     Query<'w, 's, &'static mut Transform, With<TerminalPlaneBack>>;
@@ -152,6 +180,8 @@ pub(crate) struct PresentationParams<'w, 's> {
             PlaneBackVisibilityQuery<'w, 's>,
         ),
     >,
+    plane_materials: PlaneMaterialQuery<'w, 's>,
+    materials: ResMut<'w, Assets<StandardMaterial>>,
     plane_transforms: ParamSet<
         'w,
         's,
@@ -345,15 +375,21 @@ pub(crate) fn apply_terminal_presentation(
 ) {
     let PresentationParams {
         visibility_queries,
+        plane_materials,
+        materials,
         plane_transforms,
     } = &mut params;
-    let sprite_visibility = match presentation.mode {
-        TerminalPresentationMode::Flat2d => Visibility::Visible,
-        TerminalPresentationMode::Plane3d => Visibility::Hidden,
+    let is_3d = presentation.mode.is_3d();
+    let is_mobius = presentation.mode.is_mobius();
+    let sprite_visibility = if is_3d {
+        Visibility::Hidden
+    } else {
+        Visibility::Visible
     };
-    let plane_visibility = match presentation.mode {
-        TerminalPresentationMode::Flat2d => Visibility::Hidden,
-        TerminalPresentationMode::Plane3d => Visibility::Visible,
+    let plane_visibility = if is_3d {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
     };
 
     for mut visibility in &mut visibility_queries.p0() {
@@ -365,11 +401,23 @@ pub(crate) fn apply_terminal_presentation(
     }
 
     for mut visibility in &mut visibility_queries.p2() {
-        *visibility = plane_visibility;
+        // A Mobius strip is one continuous ribbon, so the separate back sheet model does not map
+        // cleanly. Render the front material double-sided instead.
+        *visibility = if is_3d && !is_mobius {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+    }
+
+    if let Ok(front_material) = plane_materials.single() {
+        if let Some(material) = materials.get_mut(&front_material.0) {
+            material.cull_mode = if is_mobius { None } else { Some(Face::Back) };
+        }
     }
 
     for mut transform in &mut plane_transforms.p0() {
-        transform.rotation = if presentation.mode == TerminalPresentationMode::Plane3d {
+        transform.rotation = if is_3d {
             Quat::from_euler(EulerRot::XYZ, plane_view.pitch, plane_view.yaw, 0.0)
         } else {
             Quat::IDENTITY
@@ -377,29 +425,33 @@ pub(crate) fn apply_terminal_presentation(
     }
 
     for mut transform in &mut plane_transforms.p1() {
-        transform.rotation = if presentation.mode == TerminalPresentationMode::Plane3d {
-            Quat::from_euler(
+        if is_3d {
+            transform.rotation = Quat::from_euler(
                 EulerRot::XYZ,
                 plane_view.pitch,
                 plane_view.yaw + std::f32::consts::PI,
                 0.0,
-            )
+            );
+            transform.translation = if is_mobius {
+                Vec3::ZERO
+            } else {
+                Vec3::new(0.0, 0.0, -2.0)
+            };
         } else {
-            Quat::IDENTITY
-        };
+            transform.rotation = Quat::IDENTITY;
+            transform.translation = Vec3::new(0.0, 0.0, -2.0);
+        }
     }
 
     for (mut projection, mut transform) in &mut plane_transforms.p2() {
         if let Projection::Orthographic(ortho) = projection.as_mut() {
-            ortho.scale = match presentation.mode {
-                TerminalPresentationMode::Flat2d => 1.0,
-                TerminalPresentationMode::Plane3d => plane_view.zoom,
-            };
+            ortho.scale = if is_3d { plane_view.zoom } else { 1.0 };
         }
 
-        let offset = match presentation.mode {
-            TerminalPresentationMode::Flat2d => Vec3::ZERO,
-            TerminalPresentationMode::Plane3d => plane_view.camera_offset.extend(0.0),
+        let offset = if is_3d {
+            plane_view.camera_offset.extend(0.0)
+        } else {
+            Vec3::ZERO
         };
         transform.translation = Vec3::new(0.0, 0.0, 800.0) + offset;
         transform.look_at(offset, Vec3::Y);

@@ -259,7 +259,7 @@ pub(crate) fn handle_window_resize(
 ///
 /// This runs after [`crate::scene::apply_terminal_presentation`] and only flips scene visibility.
 /// [`TerminalInlineObjectSprite`] entities are shown in [`TerminalPresentationMode::Flat2d`], while
-/// [`TerminalInlineObjectPlane`] entities are shown in [`TerminalPresentationMode::Plane3d`].
+/// [`TerminalInlineObjectPlane`] entities are shown in the 3D presentation modes.
 pub fn apply_inline_objects(
     presentation: Res<TerminalPresentation>,
     mut sprite_query: Query<&mut Visibility, With<TerminalInlineObjectSprite>>,
@@ -273,11 +273,15 @@ pub fn apply_inline_objects(
 ) {
     let sprite_visibility = match presentation.mode {
         TerminalPresentationMode::Flat2d => Visibility::Visible,
-        TerminalPresentationMode::Plane3d => Visibility::Hidden,
+        TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d => {
+            Visibility::Hidden
+        }
     };
     let plane_visibility = match presentation.mode {
         TerminalPresentationMode::Flat2d => Visibility::Hidden,
-        TerminalPresentationMode::Plane3d => Visibility::Visible,
+        TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d => {
+            Visibility::Visible
+        }
     };
 
     for mut visibility in &mut sprite_query {
@@ -336,8 +340,10 @@ pub(crate) fn redraw_soft_terminal(mut params: RedrawParams) {
         asset_server,
     } = &mut params;
     let needs_redraw = redraw.take();
-    let force_live_redraw =
-        presentation.mode == TerminalPresentationMode::Plane3d && !app_config.cursor.model.visible;
+    let force_live_redraw = matches!(
+        presentation.mode,
+        TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d
+    ) && !app_config.cursor.model.visible;
     if !needs_redraw && !force_live_redraw && model_load_state.loaded {
         return;
     }
@@ -361,12 +367,18 @@ pub(crate) fn redraw_soft_terminal(mut params: RedrawParams) {
     });
 
     let _ = terminal.sync_image(images, time.elapsed_secs());
-    if presentation.mode == TerminalPresentationMode::Plane3d {
+    if matches!(
+        presentation.mode,
+        TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d
+    ) {
         sync_terminal_debug_image(terminal, images, screen);
     }
 
     sync_plane_texture(terminal.image_handle.as_ref(), plane_materials, materials);
-    if presentation.mode == TerminalPresentationMode::Plane3d {
+    if matches!(
+        presentation.mode,
+        TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d
+    ) {
         sync_plane_texture(
             terminal.back_image_handle.as_ref(),
             plane_back_materials,
@@ -434,7 +446,10 @@ pub(crate) fn sync_inline_objects(mut params: SyncInlineParams) {
         images,
         meshes,
     } = &mut params;
-    let force_warp_sync = presentation.mode == TerminalPresentationMode::Plane3d
+    let force_warp_sync = matches!(
+        presentation.mode,
+        TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d
+    )
         && plane_warp.amount > 0.0
         && !inline_objects.anchors.is_empty();
     if !force_warp_sync && !inline_objects.needs_sync(viewport.size, terminal.cols, terminal.rows) {
@@ -576,7 +591,9 @@ fn sync_kitty_inline_image(
         Transform::from_translation(Vec3::new(layout.center_x, layout.center_y, 5.0)),
         match ctx.mode {
             TerminalPresentationMode::Flat2d => Visibility::Visible,
-            TerminalPresentationMode::Plane3d => Visibility::Hidden,
+            TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d => {
+                Visibility::Hidden
+            }
         },
     ));
 
@@ -767,8 +784,8 @@ pub(crate) struct RgpSyncParams<'w, 's> {
 /// positions existing [`TerminalRgpObject`] roots from [`TerminalInlineObjects`] anchor data.
 ///
 /// In [`TerminalPresentationMode::Flat2d`] objects are placed in screen space above the terminal
-/// surface. In [`TerminalPresentationMode::Plane3d`] they are projected onto the warped terminal
-/// plane using the current [`TerminalPlane`] transform.
+/// surface. In the 3D modes they are projected onto the active terminal surface using the current
+/// [`TerminalPlane`] transform.
 pub(crate) fn sync_rgp_objects(mut params: RgpSyncParams) {
     let RgpSyncParams {
         app_config,
@@ -822,23 +839,20 @@ pub(crate) fn sync_rgp_objects(mut params: RgpSyncParams) {
                 transform.scale = Vec3::splat(scale);
                 *visibility = Visibility::Visible;
             }
-            TerminalPresentationMode::Plane3d => {
+            TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d => {
                 let Ok(plane_transform) = plane_query.single() else {
                     *visibility = Visibility::Hidden;
                     continue;
                 };
-                let local_z = plane_surface_z(
+                let local_position = plane_surface_point(
+                    presentation.mode,
                     layout.local_x,
                     layout.local_y,
                     plane_warp.amount,
                     elapsed_secs,
-                ) + 8.0
-                    + anchor.style.depth * 1.5;
-                transform.translation = plane_transform.transform_point(Vec3::new(
-                    layout.local_x,
-                    layout.local_y,
-                    local_z,
-                ));
+                    8.0 + anchor.style.depth * 1.5,
+                );
+                transform.translation = plane_transform.transform_point(local_position);
                 transform.rotation = plane_transform.rotation
                     * (base_oblique * Quat::from_rotation_y(spin) * Quat::from_rotation_x(tilt));
                 transform.scale = Vec3::splat(scale);
@@ -1064,37 +1078,65 @@ pub fn animate_terminal_plane_warp(
         return;
     }
 
-    if !warp.is_changed() && warp.amount == 0.0 {
+    let needs_update = match presentation.mode {
+        TerminalPresentationMode::Flat2d => false,
+        TerminalPresentationMode::Plane3d => {
+            presentation.is_changed() || warp.is_changed() || warp.amount > 0.0
+        }
+        // Reapply the strip every frame so mode switches and time-based motion are visible.
+        TerminalPresentationMode::Mobius3d => true,
+    };
+    if !needs_update {
         return;
     }
 
     let pulse = warp.amount * (0.96 + 0.04 * (time.elapsed_secs() * 2.2).sin());
-    apply_plane_warp(meshes.get_mut(&plane_meshes.front), pulse, -1.0);
-    apply_plane_warp(meshes.get_mut(&plane_meshes.back), pulse, 1.0);
+    apply_plane_warp(
+        meshes.get_mut(&plane_meshes.front),
+        presentation.mode,
+        pulse,
+        time.elapsed_secs(),
+        -1.0,
+    );
+    apply_plane_warp(
+        meshes.get_mut(&plane_meshes.back),
+        presentation.mode,
+        pulse,
+        time.elapsed_secs(),
+        1.0,
+    );
 }
 
-fn apply_plane_warp(mesh: Option<&mut Mesh>, pulse: f32, direction: f32) {
+fn apply_plane_warp(
+    mesh: Option<&mut Mesh>,
+    mode: TerminalPresentationMode,
+    pulse: f32,
+    elapsed_secs: f32,
+    direction: f32,
+) {
     let Some(mesh) = mesh else {
         return;
     };
+    let Some(VertexAttributeValues::Float32x2(uvs)) = mesh.attribute(Mesh::ATTRIBUTE_UV_0) else {
+        return;
+    };
+    let uvs = uvs.clone();
     let Some(VertexAttributeValues::Float32x3(positions)) =
         mesh.attribute_mut(Mesh::ATTRIBUTE_POSITION)
     else {
         return;
     };
 
-    for position in positions.iter_mut() {
-        let x = position[0];
-        let y = position[1];
-        let radius = (x * x + y * y).sqrt();
-        let displacement = if pulse > 0.0 {
-            let core = (-radius * 9.0).exp();
-            let ring = (-(radius - 0.22).powi(2) * 18.0).exp();
-            (core * 360.0 + ring * 72.0) * pulse
-        } else {
-            0.0
+    for (position, uv) in positions.iter_mut().zip(uvs.iter()) {
+        let x = uv[0] - 0.5;
+        let y = 0.5 - uv[1];
+        let point = plane_surface_point(mode, x, y, pulse, elapsed_secs, 0.0);
+        position[0] = point.x;
+        position[1] = point.y;
+        position[2] = match mode {
+            TerminalPresentationMode::Plane3d => point.z * direction,
+            TerminalPresentationMode::Flat2d | TerminalPresentationMode::Mobius3d => point.z,
         };
-        position[2] = displacement * direction;
     }
 }
 
@@ -1193,22 +1235,19 @@ fn cursor_pose(
                 Visibility::Visible
             },
         ),
-        TerminalPresentationMode::Plane3d => {
+        TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d => {
             let Ok(plane_transform) = ctx.plane_query.single() else {
                 return (Vec3::ZERO, Quat::IDENTITY, scale, Visibility::Hidden);
             };
             let plane_local_x = cursor_x / cols - 0.5;
             let plane_local_y = 0.5 - (cursor_row + 0.5) / rows + plane_bob;
-            let surface_z = plane_surface_z(
+            let local_position = plane_surface_point(
+                ctx.mode,
                 plane_local_x,
                 plane_local_y,
                 ctx.plane_warp_amount,
                 ctx.elapsed_secs,
-            );
-            let local_position = Vec3::new(
-                plane_local_x,
-                plane_local_y,
-                surface_z + app_config.cursor.model.plane_offset,
+                app_config.cursor.model.plane_offset,
             );
             (
                 plane_transform.transform_point(local_position),
@@ -1236,4 +1275,52 @@ fn plane_surface_z(local_x: f32, local_y: f32, warp_amount: f32, elapsed_secs: f
     let core = (-radius * 9.0).exp();
     let ring = (-(radius - 0.22).powi(2) * 18.0).exp();
     -(core * 360.0 + ring * 72.0) * pulse
+}
+
+fn plane_surface_point(
+    mode: TerminalPresentationMode,
+    local_x: f32,
+    local_y: f32,
+    warp_amount: f32,
+    elapsed_secs: f32,
+    depth_offset: f32,
+) -> Vec3 {
+    match mode {
+        TerminalPresentationMode::Flat2d => Vec3::new(local_x, local_y, depth_offset),
+        TerminalPresentationMode::Plane3d => Vec3::new(
+            local_x,
+            local_y,
+            plane_surface_z(local_x, local_y, warp_amount, elapsed_secs) + depth_offset,
+        ),
+        TerminalPresentationMode::Mobius3d => mobius_surface_point(
+            local_x,
+            local_y,
+            warp_amount,
+            elapsed_secs,
+            depth_offset,
+        ),
+    }
+}
+
+fn mobius_surface_point(
+    local_x: f32,
+    local_y: f32,
+    warp_amount: f32,
+    elapsed_secs: f32,
+    depth_offset: f32,
+) -> Vec3 {
+    let twist = 1.0 + warp_amount * 0.06 * (elapsed_secs * 0.7).sin();
+    let angle = (local_x + 0.5) * std::f32::consts::TAU;
+    let radius = 0.24 + warp_amount * 0.015;
+    let width = local_y * (0.42 + warp_amount * 0.04);
+    let half_angle = angle * 0.5 * twist;
+    let cos_half = half_angle.cos();
+    let sin_half = half_angle.sin();
+    let ring = radius + width * cos_half;
+
+    Vec3::new(
+        ring * angle.cos(),
+        ring * angle.sin(),
+        width * sin_half * 320.0 + depth_offset,
+    )
 }

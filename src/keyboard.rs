@@ -65,6 +65,15 @@ impl FromWorld for TerminalKeyBindings {
                 BindingAction::ToggleMode,
             ),
             KeyBinding::new(
+                KeyCode::KeyM,
+                BindingModifiers {
+                    control: true,
+                    alt: true,
+                    ..default()
+                },
+                BindingAction::ToggleMobiusMode,
+            ),
+            KeyBinding::new(
                 KeyCode::ArrowUp,
                 BindingModifiers {
                     control: true,
@@ -290,7 +299,13 @@ pub fn handle_keyboard_input(
             match action {
                 BindingAction::None => {}
                 BindingAction::ToggleMode => {
-                    params.presentation.toggle();
+                    params.presentation.toggle_plane_mode();
+                    params.selection.clear();
+                    params.redraw.request();
+                    continue;
+                }
+                BindingAction::ToggleMobiusMode => {
+                    params.presentation.toggle_mobius_mode();
                     params.selection.clear();
                     params.redraw.request();
                     continue;
