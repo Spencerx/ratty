@@ -166,8 +166,8 @@ pub enum BindingAction {
     #[serde(rename = "none")]
     None,
     /// Toggles between the flat and warped terminal views.
-    #[serde(rename = "ToggleMode")]
-    ToggleMode,
+    #[serde(rename = "Toggle3DMode")]
+    Toggle3DMode,
     /// Toggles the Mobius-strip terminal view.
     #[serde(rename = "ToggleMobiusMode")]
     ToggleMobiusMode,

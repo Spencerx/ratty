@@ -41,7 +41,8 @@ keys = [
   { key = "Equal", with = "Control", action = "IncreaseFontSize" },
   { key = "Minus", with = "Control", action = "DecreaseFontSize" },
   { key = "Digit0", with = "Control | alt", action = "ResetFontSize" },
-  { key = "Enter", with = "Control | alt", action = "ToggleMode" },
+  { key = "Enter", with = "Control | alt", action = "Toggle3DMode" },
+  { key = "M", with = "Control | alt", action = "ToggleMobiusMode" },
   { key = "Up", with = "Control | alt", action = "IncreaseWarp" },
   { key = "Down", with = "Control | alt", action = "DecreaseWarp" },
 ]

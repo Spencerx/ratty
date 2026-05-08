@@ -62,7 +62,7 @@ impl FromWorld for TerminalKeyBindings {
                     alt: true,
                     ..default()
                 },
-                BindingAction::ToggleMode,
+                BindingAction::Toggle3DMode,
             ),
             KeyBinding::new(
                 KeyCode::KeyM,
@@ -298,7 +298,7 @@ pub fn handle_keyboard_input(
 
             match action {
                 BindingAction::None => {}
-                BindingAction::ToggleMode => {
+                BindingAction::Toggle3DMode => {
                     params.presentation.toggle_plane_mode();
                     params.selection.clear();
                     params.redraw.request();
