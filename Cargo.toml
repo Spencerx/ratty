@@ -10,6 +10,7 @@ repository = "https://github.com/orhun/ratty"
 keywords = ["terminal", "emulator", "3d", "graphics" ]
 categories = ["command-line-utilities", "graphics"]
 edition = "2024"
+exclude = ["website/**", ".github/**", "widget/**"]
 
 [dependencies]
 anyhow = "1.0"
