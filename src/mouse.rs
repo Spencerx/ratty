@@ -10,7 +10,8 @@ use vt100::{MouseProtocolEncoding, MouseProtocolMode};
 
 use crate::runtime::TerminalRuntime;
 use crate::scene::{
-    TerminalPlaneView, TerminalPresentation, TerminalPresentationMode, TerminalViewport,
+    MobiusTransition, TerminalPlaneView, TerminalPresentation, TerminalPresentationMode,
+    TerminalViewport,
 };
 use crate::terminal::TerminalSurface;
 
@@ -184,6 +185,7 @@ pub struct MouseSystemParams<'w, 's> {
     terminal: NonSend<'w, TerminalSurface>,
     viewport: Res<'w, TerminalViewport>,
     presentation: Res<'w, TerminalPresentation>,
+    mobius_transition: Res<'w, MobiusTransition>,
     plane_view: ResMut<'w, TerminalPlaneView>,
     selection: ResMut<'w, TerminalSelection>,
     redraw: ResMut<'w, crate::terminal::TerminalRedrawState>,
@@ -203,6 +205,7 @@ pub(crate) fn handle_mouse_input(
         terminal,
         viewport,
         presentation,
+        mobius_transition,
         plane_view,
         selection,
         redraw,
@@ -212,6 +215,8 @@ pub(crate) fn handle_mouse_input(
     };
     let mouse_mode = runtime.parser.screen().mouse_protocol_mode();
     let mouse_encoding = runtime.parser.screen().mouse_protocol_encoding();
+    let mobius_animating =
+        presentation.mode == TerminalPresentationMode::Mobius3d && mobius_transition.active;
     let forward_mouse = presentation.mode == TerminalPresentationMode::Flat2d
         && mouse_mode != MouseProtocolMode::None;
 
@@ -221,6 +226,10 @@ pub(crate) fn handle_mouse_input(
         }
 
         selection.set_cursor_position(event.position);
+        if mobius_animating {
+            continue;
+        }
+
         if matches!(
             presentation.mode,
             TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d
@@ -282,6 +291,10 @@ pub(crate) fn handle_mouse_input(
 
     for event in button_events.read() {
         if event.window != primary_window {
+            continue;
+        }
+
+        if mobius_animating {
             continue;
         }
 
@@ -398,6 +411,10 @@ pub(crate) fn handle_mouse_input(
     }
 
     for event in wheel_events.read() {
+        if mobius_animating {
+            continue;
+        }
+
         let delta = match event.unit {
             MouseScrollUnit::Line => event.y * 0.1,
             MouseScrollUnit::Pixel => event.y * 0.001,

@@ -11,7 +11,10 @@ use arboard::Clipboard;
 use crate::config::{AppConfig, BindingAction, FontConfig, KeyBindingConfig};
 use crate::mouse::TerminalSelection;
 use crate::runtime::TerminalRuntime;
-use crate::scene::{TerminalPlaneWarp, TerminalPresentation, TerminalViewport};
+use crate::scene::{
+    MobiusTransition, TerminalPlaneView, TerminalPlaneWarp, TerminalPresentation,
+    TerminalPresentationMode, TerminalViewport,
+};
 use crate::terminal::{TerminalRedrawState, TerminalSurface};
 
 /// Clipboard bridge for terminal copy and paste.
@@ -258,7 +261,9 @@ pub struct KeyboardSystemParams<'w, 's> {
     keys: Res<'w, ButtonInput<KeyCode>>,
     selection: ResMut<'w, TerminalSelection>,
     plane_warp: ResMut<'w, TerminalPlaneWarp>,
+    plane_view: ResMut<'w, TerminalPlaneView>,
     presentation: ResMut<'w, TerminalPresentation>,
+    mobius_transition: ResMut<'w, MobiusTransition>,
     clipboard: NonSendMut<'w, TerminalClipboard>,
     runtime: NonSendMut<'w, TerminalRuntime>,
     terminal: NonSendMut<'w, TerminalSurface>,
@@ -300,12 +305,28 @@ pub fn handle_keyboard_input(
                 BindingAction::None => {}
                 BindingAction::Toggle3DMode => {
                     params.presentation.toggle_plane_mode();
+                    params.mobius_transition.stop();
                     params.selection.clear();
                     params.redraw.request();
                     continue;
                 }
                 BindingAction::ToggleMobiusMode => {
-                    params.presentation.toggle_mobius_mode();
+                    if params.presentation.mode == TerminalPresentationMode::Mobius3d {
+                        let current_zoom = if params.mobius_transition.active {
+                            params.mobius_transition.current_zoom()
+                        } else {
+                            params.plane_view.zoom
+                        };
+                        params
+                            .mobius_transition
+                            .begin_exit(&params.plane_view, current_zoom);
+                    } else {
+                        let previous_mode = params.presentation.mode;
+                        params.presentation.toggle_mobius_mode();
+                        params
+                            .mobius_transition
+                            .begin_enter(previous_mode, &params.plane_view);
+                    }
                     params.selection.clear();
                     params.redraw.request();
                     continue;

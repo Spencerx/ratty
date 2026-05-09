@@ -1,5 +1,9 @@
 //! Scene setup and presentation resources.
 
+mod mobius;
+
+pub use mobius::{MobiusTransition, MobiusTransitionDirection};
+
 use bevy::asset::RenderAssetUsages;
 use bevy::camera::ClearColorConfig;
 use bevy::ecs::query::With;
@@ -345,6 +349,7 @@ pub fn setup_scene(
         mode: TerminalPresentationMode::Flat2d,
     });
     commands.insert_resource(TerminalPlaneView::default());
+    commands.insert_resource(MobiusTransition::default());
     commands.insert_resource(ModelLoadState {
         loaded: false,
         first_frame_uploaded: false,
@@ -371,6 +376,7 @@ fn create_terminal_image(width: u32, height: u32, fill: [u8; 4]) -> Image {
 pub(crate) fn apply_terminal_presentation(
     presentation: Res<TerminalPresentation>,
     plane_view: Res<TerminalPlaneView>,
+    mobius_transition: Res<MobiusTransition>,
     mut params: PresentationParams,
 ) {
     let PresentationParams {
@@ -381,6 +387,21 @@ pub(crate) fn apply_terminal_presentation(
     } = &mut params;
     let is_3d = presentation.mode.is_3d();
     let is_mobius = presentation.mode.is_mobius();
+    let yaw = if is_mobius && mobius_transition.active {
+        mobius_transition.current_yaw()
+    } else {
+        plane_view.yaw
+    };
+    let pitch = if is_mobius && mobius_transition.active {
+        mobius_transition.current_pitch()
+    } else {
+        plane_view.pitch
+    };
+    let camera_offset = if is_mobius && mobius_transition.active {
+        mobius_transition.current_camera_offset()
+    } else {
+        plane_view.camera_offset
+    };
     let sprite_visibility = if is_3d {
         Visibility::Hidden
     } else {
@@ -418,7 +439,7 @@ pub(crate) fn apply_terminal_presentation(
 
     for mut transform in &mut plane_transforms.p0() {
         transform.rotation = if is_3d {
-            Quat::from_euler(EulerRot::XYZ, plane_view.pitch, plane_view.yaw, 0.0)
+            Quat::from_euler(EulerRot::XYZ, pitch, yaw, 0.0)
         } else {
             Quat::IDENTITY
         };
@@ -428,8 +449,8 @@ pub(crate) fn apply_terminal_presentation(
         if is_3d {
             transform.rotation = Quat::from_euler(
                 EulerRot::XYZ,
-                plane_view.pitch,
-                plane_view.yaw + std::f32::consts::PI,
+                pitch,
+                yaw + std::f32::consts::PI,
                 0.0,
             );
             transform.translation = if is_mobius {
@@ -445,11 +466,16 @@ pub(crate) fn apply_terminal_presentation(
 
     for (mut projection, mut transform) in &mut plane_transforms.p2() {
         if let Projection::Orthographic(ortho) = projection.as_mut() {
-            ortho.scale = if is_3d { plane_view.zoom } else { 1.0 };
+            let zoom = if is_mobius && mobius_transition.active {
+                mobius_transition.current_zoom()
+            } else {
+                plane_view.zoom
+            };
+            ortho.scale = if is_3d { zoom } else { 1.0 };
         }
 
         let offset = if is_3d {
-            plane_view.camera_offset.extend(0.0)
+            camera_offset.extend(0.0)
         } else {
             Vec3::ZERO
         };

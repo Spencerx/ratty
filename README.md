@@ -12,7 +12,7 @@ Inspired by TempleOS | Built with Rust & Ratatui
 </p>
 
 <div>
-  <video src="https://github.com/user-attachments/assets/ebe4dc54-ec60-4399-a63e-0d04b3013433" alt="Ratty Demo"/>
+  <video src="https://github.com/user-attachments/assets/17eda86b-d00f-401b-9cf4-38343fa71386" alt="Ratty Demo"/>
 </div>
 
 ## Features

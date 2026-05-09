@@ -32,8 +32,9 @@ use crate::mouse::TerminalSelection;
 use crate::rendering::{sync_plane_texture, sync_terminal_debug_image};
 use crate::runtime::TerminalRuntime;
 use crate::scene::{
-    ModelLoadState, TerminalPlane, TerminalPlaneBack, TerminalPlaneMeshes, TerminalPlaneWarp,
-    TerminalPresentation, TerminalPresentationMode, TerminalSprite, TerminalViewport,
+    MobiusTransition, ModelLoadState, TerminalPlane, TerminalPlaneBack, TerminalPlaneMeshes,
+    TerminalPlaneView, TerminalPlaneWarp, TerminalPresentation, TerminalPresentationMode,
+    TerminalSprite, TerminalViewport,
 };
 use crate::terminal::{TerminalRedrawState, TerminalSurface, TerminalWidget};
 use bevy::app::AppExit;
@@ -76,6 +77,7 @@ struct CursorPoseContext<'a, 'w, 's> {
     viewport: &'a TerminalViewport,
     mode: TerminalPresentationMode,
     plane_warp_amount: f32,
+    mobius_progress: f32,
     elapsed_secs: f32,
     plane_query: &'a Query<'w, 's, &'static Transform, (With<TerminalPlane>, Without<CursorModel>)>,
 }
@@ -763,6 +765,7 @@ pub(crate) struct RgpSyncParams<'w, 's> {
     terminal: NonSend<'w, TerminalSurface>,
     viewport: Res<'w, TerminalViewport>,
     presentation: Res<'w, TerminalPresentation>,
+    mobius_transition: Res<'w, MobiusTransition>,
     plane_warp: Res<'w, TerminalPlaneWarp>,
     time: Res<'w, Time>,
     plane_query: PlaneTransformQuery<'w, 's>,
@@ -792,6 +795,7 @@ pub(crate) fn sync_rgp_objects(mut params: RgpSyncParams) {
         terminal,
         viewport,
         presentation,
+        mobius_transition,
         plane_warp,
         time,
         plane_query,
@@ -801,6 +805,7 @@ pub(crate) fn sync_rgp_objects(mut params: RgpSyncParams) {
     let cell_width = viewport.size.x / terminal.cols.max(1) as f32;
     let cell_height = viewport.size.y / terminal.rows.max(1) as f32;
     let elapsed_secs = time.elapsed_secs();
+    let mobius_progress = active_mobius_progress(presentation.mode, mobius_transition);
 
     for (object, mut transform, mut visibility) in query.iter_mut() {
         let Some(anchor) = inline_objects.anchors.get(&object.object_id) else {
@@ -851,6 +856,7 @@ pub(crate) fn sync_rgp_objects(mut params: RgpSyncParams) {
                     plane_warp.amount,
                     elapsed_secs,
                     8.0 + anchor.style.depth * 1.5,
+                    mobius_progress,
                 );
                 transform.translation = plane_transform.transform_point(local_position);
                 transform.rotation = plane_transform.rotation
@@ -1070,6 +1076,7 @@ fn extrude_mesh(mesh: Mesh, depth: f32) -> Mesh {
 pub fn animate_terminal_plane_warp(
     time: Res<Time>,
     presentation: Res<TerminalPresentation>,
+    mobius_transition: Res<MobiusTransition>,
     warp: Res<TerminalPlaneWarp>,
     plane_meshes: Res<TerminalPlaneMeshes>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -1091,12 +1098,14 @@ pub fn animate_terminal_plane_warp(
     }
 
     let pulse = warp.amount * (0.96 + 0.04 * (time.elapsed_secs() * 2.2).sin());
+    let mobius_progress = active_mobius_progress(presentation.mode, &mobius_transition);
     apply_plane_warp(
         meshes.get_mut(&plane_meshes.front),
         presentation.mode,
         pulse,
         time.elapsed_secs(),
         -1.0,
+        mobius_progress,
     );
     apply_plane_warp(
         meshes.get_mut(&plane_meshes.back),
@@ -1104,7 +1113,56 @@ pub fn animate_terminal_plane_warp(
         pulse,
         time.elapsed_secs(),
         1.0,
+        mobius_progress,
     );
+}
+
+/// Advances the Mobius transition and restores normal 3D interaction when it completes.
+pub fn animate_mobius_transition(
+    time: Res<Time>,
+    mut presentation: ResMut<TerminalPresentation>,
+    mut mobius_transition: ResMut<MobiusTransition>,
+    mut plane_view: ResMut<TerminalPlaneView>,
+    mut redraw: ResMut<TerminalRedrawState>,
+) {
+    if presentation.mode != TerminalPresentationMode::Mobius3d {
+        mobius_transition.stop();
+        return;
+    }
+
+    if !mobius_transition.active {
+        return;
+    }
+
+    mobius_transition.elapsed_secs += time.delta_secs();
+    redraw.request();
+
+    if mobius_transition.finished() {
+        plane_view.zoom = mobius_transition.end_zoom.max(0.1);
+        if mobius_transition.direction == crate::scene::MobiusTransitionDirection::Exiting {
+            plane_view.yaw = mobius_transition.source_yaw;
+            plane_view.pitch = mobius_transition.source_pitch;
+            plane_view.camera_offset = mobius_transition.source_camera_offset;
+            presentation.mode = mobius_transition.source_mode;
+        }
+        mobius_transition.stop();
+        redraw.request();
+    }
+}
+
+fn active_mobius_progress(
+    mode: TerminalPresentationMode,
+    mobius_transition: &MobiusTransition,
+) -> f32 {
+    if mode != TerminalPresentationMode::Mobius3d {
+        return 0.0;
+    }
+
+    if mobius_transition.active {
+        mobius_transition.morph_progress()
+    } else {
+        1.0
+    }
 }
 
 fn apply_plane_warp(
@@ -1113,6 +1171,7 @@ fn apply_plane_warp(
     pulse: f32,
     elapsed_secs: f32,
     direction: f32,
+    mobius_progress: f32,
 ) {
     let Some(mesh) = mesh else {
         return;
@@ -1130,7 +1189,7 @@ fn apply_plane_warp(
     for (position, uv) in positions.iter_mut().zip(uvs.iter()) {
         let x = uv[0] - 0.5;
         let y = 0.5 - uv[1];
-        let point = plane_surface_point(mode, x, y, pulse, elapsed_secs, 0.0);
+        let point = plane_surface_point(mode, x, y, pulse, elapsed_secs, 0.0, mobius_progress);
         position[0] = point.x;
         position[1] = point.y;
         position[2] = match mode {
@@ -1148,6 +1207,7 @@ pub(crate) struct CursorSyncParams<'w, 's> {
     terminal: NonSend<'w, TerminalSurface>,
     viewport: Res<'w, TerminalViewport>,
     presentation: Res<'w, TerminalPresentation>,
+    mobius_transition: Res<'w, MobiusTransition>,
     plane_warp: Res<'w, TerminalPlaneWarp>,
     time: Res<'w, Time>,
     plane_query: Query<'w, 's, &'static Transform, (With<TerminalPlane>, Without<CursorModel>)>,
@@ -1169,6 +1229,7 @@ pub(crate) fn sync_asset_to_terminal_cursor(mut params: CursorSyncParams) {
         terminal,
         viewport,
         presentation,
+        mobius_transition,
         plane_warp,
         time,
         plane_query,
@@ -1184,6 +1245,7 @@ pub(crate) fn sync_asset_to_terminal_cursor(mut params: CursorSyncParams) {
         viewport,
         mode: presentation.mode,
         plane_warp_amount: plane_warp.amount,
+        mobius_progress: active_mobius_progress(presentation.mode, mobius_transition),
         elapsed_secs: time.elapsed_secs(),
         plane_query,
     };
@@ -1248,6 +1310,7 @@ fn cursor_pose(
                 ctx.plane_warp_amount,
                 ctx.elapsed_secs,
                 app_config.cursor.model.plane_offset,
+                ctx.mobius_progress,
             );
             (
                 plane_transform.transform_point(local_position),
@@ -1284,6 +1347,7 @@ fn plane_surface_point(
     warp_amount: f32,
     elapsed_secs: f32,
     depth_offset: f32,
+    mobius_progress: f32,
 ) -> Vec3 {
     match mode {
         TerminalPresentationMode::Flat2d => Vec3::new(local_x, local_y, depth_offset),
@@ -1292,13 +1356,12 @@ fn plane_surface_point(
             local_y,
             plane_surface_z(local_x, local_y, warp_amount, elapsed_secs) + depth_offset,
         ),
-        TerminalPresentationMode::Mobius3d => mobius_surface_point(
-            local_x,
-            local_y,
-            warp_amount,
-            elapsed_secs,
-            depth_offset,
-        ),
+        TerminalPresentationMode::Mobius3d => {
+            let source_point = Vec3::new(local_x, local_y, depth_offset);
+            let target_point =
+                mobius_surface_point(local_x, local_y, warp_amount, elapsed_secs, depth_offset);
+            source_point.lerp(target_point, mobius_progress)
+        }
     }
 }
 
