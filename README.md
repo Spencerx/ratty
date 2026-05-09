@@ -1,8 +1,8 @@
 <p align="center">
-<img width="300" src="https://raw.githubusercontent.com/orhun/ratty/refs/heads/main/assets/img/ratty-logo.gif" />
+<img width="300" src="https://raw.githubusercontent.com/orhun/ratty/refs/heads/main/website/assets/images/ratty-logo.gif" />
 <br>
 <br>
-<b>Ratty: A GPU-rendered terminal emulator that supports inline 3D graphics</b> 🧀
+<b>Ratty: A GPU-rendered terminal emulator with inline 3D graphics</b> 🧀
 <br>
 <sup>
 Inspired by TempleOS | Built with Rust & Ratatui
