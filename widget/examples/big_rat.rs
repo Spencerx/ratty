@@ -1,4 +1,5 @@
 use std::io;
+use std::path::{Path, PathBuf};
 
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
@@ -20,7 +21,7 @@ fn main() -> io::Result<()> {
 
 fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
     let mut graphic = RattyGraphic::new(
-        RattyGraphicSettings::new("assets/objects/SpinyMouse.glb")
+        RattyGraphicSettings::new(workspace_asset_string("assets/objects/SpinyMouse.glb"))
             .id(7)
             .animate(true)
             .scale(1.0),
@@ -125,6 +126,17 @@ fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
             }
         }
     }
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("widget crate should live under the workspace root")
+        .to_path_buf()
+}
+
+fn workspace_asset_string(path: impl AsRef<Path>) -> String {
+    workspace_root().join(path).to_string_lossy().into_owned()
 }
 
 fn clamp_rect(mut rect: Rect, bounds: Rect) -> Rect {

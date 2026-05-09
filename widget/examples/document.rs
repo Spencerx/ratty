@@ -1,6 +1,6 @@
 use std::{
     fs, io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -47,9 +47,9 @@ fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
     }
 }
 
-struct TempleEditor<'a> {
+struct TempleEditor {
     lines: Vec<Vec<DocCell>>,
-    objects: Vec<Option<PlacedGraphic<'a>>>,
+    objects: Vec<Option<PlacedGraphic>>,
     asset_pool: Vec<String>,
     next_object_id: u32,
     debug_cells: bool,
@@ -61,9 +61,9 @@ struct TempleEditor<'a> {
     show_logo: bool,
 }
 
-impl<'a> TempleEditor<'a> {
+impl TempleEditor {
     fn new() -> io::Result<Self> {
-        let image_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/TempleOS.jpg");
+        let image_path = workspace_asset("widget/assets/TempleOS.jpg");
         let image = image::ImageReader::open(image_path)
             .map_err(io::Error::other)?
             .decode()
@@ -298,7 +298,7 @@ impl<'a> TempleEditor<'a> {
     fn insert_object(
         &mut self,
         id: u32,
-        path: &'a str,
+        path: String,
         row: usize,
         col: usize,
         width: u16,
@@ -342,7 +342,7 @@ impl<'a> TempleEditor<'a> {
 
         for (name, row, col, width, height, scale) in presets {
             if self.asset_pool.iter().any(|asset| asset == name) {
-                let path = Box::leak(format!("widget/assets/{name}").into_boxed_str());
+                let path = workspace_asset_string(PathBuf::from("widget/assets").join(name));
                 let id = self.next_object_id;
                 self.next_object_id += 1;
                 self.insert_object(id, path, row, col, width, height, scale, true);
@@ -360,7 +360,7 @@ impl<'a> TempleEditor<'a> {
             .map(|duration| duration.as_nanos() as usize)
             .unwrap_or(0);
         let asset = self.asset_pool[nanos % self.asset_pool.len()].clone();
-        let path = Box::leak(format!("widget/assets/{asset}").into_boxed_str());
+        let path = workspace_asset_string(PathBuf::from("widget/assets").join(&asset));
         let row = self.cursor_row;
         let col = self.cursor_col;
         let id = self.next_object_id;
@@ -482,8 +482,8 @@ enum DocCell {
     Object(usize),
 }
 
-struct PlacedGraphic<'a> {
-    graphic: RattyGraphic<'a>,
+struct PlacedGraphic {
+    graphic: RattyGraphic<'static>,
     width: u16,
     height: u16,
     visible: bool,
@@ -602,7 +602,7 @@ fn place_at_anchor(
 }
 
 fn discover_obj_assets() -> io::Result<Vec<String>> {
-    let assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets");
+    let assets_dir = workspace_asset("widget/assets");
     let mut assets = fs::read_dir(assets_dir)?
         .filter_map(|entry| {
             let entry = entry.ok()?;
@@ -614,6 +614,21 @@ fn discover_obj_assets() -> io::Result<Vec<String>> {
         .collect::<Vec<_>>();
     assets.sort();
     Ok(assets)
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("widget crate should live under the workspace root")
+        .to_path_buf()
+}
+
+fn workspace_asset(path: impl AsRef<Path>) -> PathBuf {
+    workspace_root().join(path)
+}
+
+fn workspace_asset_string(path: impl AsRef<Path>) -> String {
+    workspace_asset(path).to_string_lossy().into_owned()
 }
 
 fn random_color(seed: u32) -> [u8; 3] {
