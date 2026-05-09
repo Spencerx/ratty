@@ -38,6 +38,7 @@ bevy = { version = "0.18.1", default-features = false, features = [
     "x11",
     "zstd_rust",
 ] }
+clap = { version = "4.5", features = ["derive"] }
 etcetera = "0.11"
 image = { version = "0.25", default-features = false, features = ["png"] }
 parley_ratatui = "0.2.0"

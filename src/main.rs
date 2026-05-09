@@ -3,10 +3,12 @@ use std::time::Duration;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use bevy::winit::{UpdateMode, WinitSettings};
+use clap::Parser;
 
+use ratty::cli::Cli;
 use ratty::config::AppConfig;
 use ratty::plugin::TerminalPlugin;
-use ratty::runtime::TerminalRuntime;
+use ratty::runtime::{RuntimeOptions, TerminalRuntime};
 use ratty::terminal::TerminalSurface;
 
 /// Focused-window update interval for low-power winit mode.
@@ -15,9 +17,17 @@ const FOCUSED_UPDATE_INTERVAL: Duration = Duration::from_millis(33);
 const UNFOCUSED_UPDATE_INTERVAL: Duration = Duration::from_millis(250);
 
 fn main() -> anyhow::Result<()> {
-    let app_config = AppConfig::load()?;
-    let runtime = TerminalRuntime::spawn(&app_config)?;
+    let cli = Cli::parse();
+    let app_config = AppConfig::load_from_path(cli.config_file.as_deref())?;
+    let runtime = TerminalRuntime::spawn(
+        &app_config,
+        &RuntimeOptions {
+            command: cli.command.clone(),
+            working_dir: Some(std::env::current_dir()?),
+        },
+    )?;
     let terminal = TerminalSurface::new(&app_config)?;
+    let window_title = cli.title;
 
     App::new()
         .insert_resource(ClearColor(Color::srgba_u8(
@@ -36,7 +46,7 @@ fn main() -> anyhow::Result<()> {
         .add_plugins(
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
-                    title: env!("CARGO_PKG_NAME").into(),
+                    title: window_title.into(),
                     resolution: WindowResolution::new(
                         app_config.window.width,
                         app_config.window.height,

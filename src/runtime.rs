@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 use std::env;
 use std::io::{ErrorKind, Read, Write};
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -12,6 +13,15 @@ use portable_pty::{CommandBuilder, MasterPty, PtySize, native_pty_system};
 use vt100::{Callbacks, Parser, Screen};
 
 use crate::config::AppConfig;
+
+/// Command-line runtime overrides.
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeOptions {
+    /// Command and arguments to execute instead of the configured shell.
+    pub command: Option<Vec<String>>,
+    /// Working directory used for the spawned PTY command.
+    pub working_dir: Option<PathBuf>,
+}
 
 /// Callback state for unhandled parser sequences.
 #[derive(Default)]
@@ -180,7 +190,7 @@ impl TerminalRuntime {
     /// # Errors
     ///
     /// Returns an error if the PTY cannot be created or the shell cannot be spawned.
-    pub fn spawn(config: &AppConfig) -> anyhow::Result<Self> {
+    pub fn spawn(config: &AppConfig, options: &RuntimeOptions) -> anyhow::Result<Self> {
         let cols = config.terminal.default_cols;
         let rows = config.terminal.default_rows;
         let pty_system = native_pty_system();
@@ -193,15 +203,30 @@ impl TerminalRuntime {
             })
             .context("failed to create PTY pair")?;
 
-        let shell = config
-            .shell
-            .program
-            .as_ref()
-            .map(|path| path.to_string_lossy().into_owned())
-            .or_else(|| env::var("SHELL").ok())
-            .unwrap_or_else(|| "/bin/bash".to_string());
-        let mut cmd = CommandBuilder::new(shell);
-        cmd.args(&config.shell.args);
+        let mut cmd = if let Some(command) = &options.command {
+            let mut command = command.iter();
+            let program = command
+                .next()
+                .context("command override must contain at least one argument")?;
+            let mut cmd = CommandBuilder::new(program);
+            cmd.args(command);
+            cmd
+        } else {
+            let shell = config
+                .shell
+                .program
+                .as_ref()
+                .map(|path| path.to_string_lossy().into_owned())
+                .or_else(|| env::var("SHELL").ok())
+                .unwrap_or_else(|| "/bin/bash".to_string());
+            let mut cmd = CommandBuilder::new(shell);
+            cmd.args(&config.shell.args);
+            cmd
+        };
+
+        if let Some(working_dir) = &options.working_dir {
+            cmd.cwd(working_dir);
+        }
         if !config.env.contains_key("TERM") {
             cmd.env("TERM", "xterm-256color");
         }

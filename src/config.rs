@@ -49,17 +49,22 @@ impl AppConfig {
     ///
     /// Returns an error if the selected config file cannot be read or parsed.
     pub fn load() -> anyhow::Result<Self> {
-        let strategy =
-            choose_base_strategy().context("failed to determine system config directory")?;
-        let system_path = strategy.config_dir().join(APP_NAME).join("ratty.toml");
-        let local_path = PathBuf::from(CONFIG_PATH);
-        let Some(path) = (if system_path.exists() {
-            Some(system_path)
-        } else if local_path.exists() {
-            Some(local_path)
+        Self::load_from_path(None)
+    }
+
+    /// Loads the application configuration from an explicit path or the default search paths.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the selected config file cannot be read or parsed.
+    pub fn load_from_path(path: Option<&Path>) -> anyhow::Result<Self> {
+        let selected_path = if let Some(path) = path {
+            Some(path.to_path_buf())
         } else {
-            None
-        }) else {
+            Self::default_config_path()?
+        };
+
+        let Some(path) = selected_path else {
             return Ok(Self::default());
         };
 
@@ -67,18 +72,36 @@ impl AppConfig {
             .with_context(|| format!("failed to read {}", path.display()))?;
         let mut config: Self = toml::from_str(&contents)
             .with_context(|| format!("failed to parse {}", path.display()))?;
+        config.resolve_relative_paths(&path);
+        Ok(config)
+    }
+
+    fn default_config_path() -> anyhow::Result<Option<PathBuf>> {
+        let strategy =
+            choose_base_strategy().context("failed to determine system config directory")?;
+        let system_path = strategy.config_dir().join(APP_NAME).join("ratty.toml");
+        let local_path = PathBuf::from(CONFIG_PATH);
+        Ok(if system_path.exists() {
+            Some(system_path)
+        } else if local_path.exists() {
+            Some(local_path)
+        } else {
+            None
+        })
+    }
+
+    fn resolve_relative_paths(&mut self, path: &Path) {
         let config_dir = path.parent().unwrap_or_else(|| Path::new("."));
-        if config.cursor.model.path.is_relative()
-            && config
+        if self.cursor.model.path.is_relative()
+            && self
                 .cursor
                 .model
                 .path
                 .parent()
                 .is_some_and(|parent| !parent.as_os_str().is_empty())
         {
-            config.cursor.model.path = config_dir.join(&config.cursor.model.path);
+            self.cursor.model.path = config_dir.join(&self.cursor.model.path);
         }
-        Ok(config)
     }
 }
 
