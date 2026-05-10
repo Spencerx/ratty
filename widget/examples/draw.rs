@@ -310,10 +310,10 @@ impl<'a> DrawingApp<'a> {
             frame.render_widget(Paragraph::new("Draw here!").centered(), placeholder);
         }
 
-        if let Some(position) = self.mouse_position {
-            if self.local_canvas_position(position).is_some() {
-                frame.set_cursor_position(position);
-            }
+        if let Some(position) = self.mouse_position
+            && self.local_canvas_position(position).is_some()
+        {
+            frame.set_cursor_position(position);
         }
     }
 

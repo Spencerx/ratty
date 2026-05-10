@@ -295,40 +295,30 @@ impl TempleEditor {
         self.ensure_cursor_visible();
     }
 
-    fn insert_object(
-        &mut self,
-        id: u32,
-        path: String,
-        row: usize,
-        col: usize,
-        width: u16,
-        height: u16,
-        scale: f32,
-        animate: bool,
-    ) {
-        while self.lines.len() <= row {
+    fn insert_object(&mut self, placement: ObjectPlacement) {
+        while self.lines.len() <= placement.row {
             self.lines.push(Vec::new());
         }
-        while self.lines[row].len() < col {
-            self.lines[row].push(DocCell::Char(' '));
+        while self.lines[placement.row].len() < placement.col {
+            self.lines[placement.row].push(DocCell::Char(' '));
         }
 
         let index = self.objects.len();
         self.objects.push(Some(PlacedGraphic {
             graphic: RattyGraphic::new(
-                RattyGraphicSettings::new(path)
-                    .id(id)
-                    .scale(scale)
+                RattyGraphicSettings::new(placement.path)
+                    .id(placement.id)
+                    .scale(placement.scale)
                     .depth(3.0)
-                    .color(random_color(id))
+                    .color(random_color(placement.id))
                     .brightness(1.0)
-                    .animate(animate),
+                    .animate(placement.animate),
             ),
-            width,
-            height,
+            width: placement.width,
+            height: placement.height,
             visible: false,
         }));
-        self.lines[row].insert(col, DocCell::Object(index));
+        self.lines[placement.row].insert(placement.col, DocCell::Object(index));
     }
 
     fn insert_startup_objects(&mut self) {
@@ -345,7 +335,16 @@ impl TempleEditor {
                 let path = workspace_asset_string(PathBuf::from("widget/assets").join(name));
                 let id = self.next_object_id;
                 self.next_object_id += 1;
-                self.insert_object(id, path, row, col, width, height, scale, true);
+                self.insert_object(ObjectPlacement {
+                    id,
+                    path,
+                    row,
+                    col,
+                    width,
+                    height,
+                    scale,
+                    animate: true,
+                });
             }
         }
     }
@@ -365,7 +364,16 @@ impl TempleEditor {
         let col = self.cursor_col;
         let id = self.next_object_id;
         self.next_object_id += 1;
-        self.insert_object(id, path, row, col, 16, 8, 1.0, true);
+        self.insert_object(ObjectPlacement {
+            id,
+            path,
+            row,
+            col,
+            width: 16,
+            height: 8,
+            scale: 1.0,
+            animate: true,
+        });
         self.cursor_col += 1;
     }
 
@@ -467,10 +475,8 @@ impl TempleEditor {
     }
 
     fn clear(&self) -> io::Result<()> {
-        for object in &self.objects {
-            if let Some(object) = object {
-                object.graphic.clear()?;
-            }
+        for object in self.objects.iter().flatten() {
+            object.graphic.clear()?;
         }
         Ok(())
     }
@@ -487,6 +493,17 @@ struct PlacedGraphic {
     width: u16,
     height: u16,
     visible: bool,
+}
+
+struct ObjectPlacement {
+    id: u32,
+    path: String,
+    row: usize,
+    col: usize,
+    width: u16,
+    height: u16,
+    scale: f32,
+    animate: bool,
 }
 
 fn initial_lines() -> Vec<Vec<DocCell>> {
