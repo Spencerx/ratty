@@ -431,10 +431,10 @@ pub(crate) fn apply_terminal_presentation(
         };
     }
 
-    if let Ok(front_material) = plane_materials.single() {
-        if let Some(material) = materials.get_mut(&front_material.0) {
-            material.cull_mode = if is_mobius { None } else { Some(Face::Back) };
-        }
+    if let Ok(front_material) = plane_materials.single()
+        && let Some(material) = materials.get_mut(&front_material.0)
+    {
+        material.cull_mode = if is_mobius { None } else { Some(Face::Back) };
     }
 
     for mut transform in &mut plane_transforms.p0() {

@@ -243,14 +243,16 @@ impl TerminalKeyboard {
 
         Some(translate_key(
             event.key_code,
-            &event.logical_key,
-            event.text.as_deref(),
-            self.ctrl_pressed,
-            self.alt_pressed,
-            self.shift_pressed,
-            application_cursor,
-            kitty_keyboard_flags,
-            modify_other_keys,
+            KeyTranslationContext {
+                logical_key: &event.logical_key,
+                text: event.text.as_deref(),
+                ctrl_pressed: self.ctrl_pressed,
+                alt_pressed: self.alt_pressed,
+                shift_pressed: self.shift_pressed,
+                application_cursor,
+                kitty_keyboard_flags,
+                modify_other_keys,
+            },
         ))
     }
 }
@@ -509,21 +511,24 @@ impl ParsedModifier {
     }
 }
 
-fn translate_key(
-    key_code: KeyCode,
-    logical_key: &Key,
-    text: Option<&str>,
+struct KeyTranslationContext<'a> {
+    logical_key: &'a Key,
+    text: Option<&'a str>,
     ctrl_pressed: bool,
     alt_pressed: bool,
     shift_pressed: bool,
     application_cursor: bool,
     kitty_keyboard_flags: u8,
     modify_other_keys: Option<u8>,
-) -> Vec<u8> {
+}
+
+fn translate_key(key_code: KeyCode, ctx: KeyTranslationContext<'_>) -> Vec<u8> {
     let mut bytes = Vec::new();
 
-    if ctrl_pressed && let Some(ctrl) = ctrl_keycode_byte(key_code) {
-        if alt_pressed {
+    if ctx.ctrl_pressed
+        && let Some(ctrl) = ctrl_keycode_byte(key_code)
+    {
+        if ctx.alt_pressed {
             bytes.push(0x1b);
         }
         bytes.push(ctrl);
@@ -532,27 +537,27 @@ fn translate_key(
 
     // Kitty flag bit 0 requests disambiguated escape codes, which gives us an unambiguous
     // encoding for modified special keys such as Ctrl+Enter.
-    let kitty_disambiguate = kitty_keyboard_flags & 1 != 0;
+    let kitty_disambiguate = ctx.kitty_keyboard_flags & 1 != 0;
     if let Some(sequence) = encode_modified_special_key(
         key_code,
-        ctrl_pressed,
-        alt_pressed,
-        shift_pressed,
+        ctx.ctrl_pressed,
+        ctx.alt_pressed,
+        ctx.shift_pressed,
         kitty_disambiguate,
-        modify_other_keys,
+        ctx.modify_other_keys,
     ) {
         bytes.extend_from_slice(&sequence);
         return bytes;
     }
 
-    if alt_pressed {
+    if ctx.alt_pressed {
         bytes.push(0x1b);
     }
 
     let navigation_key = NavigationKey::from_key_code(key_code)
-        .or_else(|| NavigationKey::from_logical_key(logical_key));
+        .or_else(|| NavigationKey::from_logical_key(ctx.logical_key));
     if let Some(key) = navigation_key {
-        bytes.extend_from_slice(&key.encode(ctrl_pressed, application_cursor));
+        bytes.extend_from_slice(&key.encode(ctx.ctrl_pressed, ctx.application_cursor));
         return bytes;
     }
 
@@ -563,9 +568,9 @@ fn translate_key(
         KeyCode::Backspace => bytes.push(0x7f),
         KeyCode::Escape => bytes.push(0x1b),
         _ => {
-            if let Some(text) = text {
+            if let Some(text) = ctx.text {
                 bytes.extend_from_slice(text.as_bytes());
-            } else if let Key::Character(chars) = logical_key {
+            } else if let Key::Character(chars) = ctx.logical_key {
                 bytes.extend_from_slice(chars.as_bytes());
             }
         }
