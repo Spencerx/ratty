@@ -33,11 +33,14 @@ jobs:
         run: cargo fmt --all --manifest-path ${{ matrix.manifest }} -- --check
 
   check:
-    name: Check (${{ matrix.manifest }})
-    runs-on: ubuntu-latest
+    name: Check (${{ matrix.os }}, ${{ matrix.manifest }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
         manifest:
           - Cargo.toml
           - widget/Cargo.toml
@@ -45,6 +48,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Install system dependencies
+        if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
