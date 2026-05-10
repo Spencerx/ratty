@@ -23,6 +23,8 @@ Inspired by TempleOS | Built with Rust & Ratatui
 - [GPU-backed text rendering](#rendering-pipeline)
 - Image support (via Kitty Graphics Protocol >:\()
 
+[Watch the demo video here!](https://youtu.be/cY9AX5j-osY) ▶️
+
 ### 3D mode
 
 Ever wondered what's _behind_ the terminal? Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Enter</kbd>!
