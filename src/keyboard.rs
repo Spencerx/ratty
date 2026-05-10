@@ -284,9 +284,7 @@ pub fn handle_keyboard_input(
         // if a modifier press/release event was missed or arrived in a different order.
         let modifiers = current_modifiers(&params.keys);
         if event.state == ButtonState::Pressed
-            && let Some(action) = params
-                .bindings
-                .action_for(event.key_code, modifiers)
+            && let Some(action) = params.bindings.action_for(event.key_code, modifiers)
         {
             if event.repeat
                 && !matches!(
@@ -404,14 +402,12 @@ pub fn handle_keyboard_input(
             params.redraw.request();
         }
 
-        if let Some(input) = keyboard
-            .handle_event_with_modes(
-                event,
-                params.runtime.parser.screen().application_cursor(),
-                params.runtime.kitty_keyboard_flags(),
-                params.runtime.modify_other_keys(),
-            )
-        {
+        if let Some(input) = keyboard.handle_event_with_modes(
+            event,
+            params.runtime.parser.screen().application_cursor(),
+            params.runtime.kitty_keyboard_flags(),
+            params.runtime.modify_other_keys(),
+        ) {
             params.runtime.write_input(&input);
         }
     }

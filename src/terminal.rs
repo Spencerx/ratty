@@ -141,8 +141,7 @@ impl TerminalSurface {
         } else {
             tui.show_cursor()?;
         }
-        let renderer =
-            build_terminal_renderer(&config.font, &config.theme, config.window.opacity);
+        let renderer = build_terminal_renderer(&config.font, &config.theme, config.window.opacity);
 
         Ok(Self {
             tui,

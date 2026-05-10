@@ -451,8 +451,7 @@ pub(crate) fn sync_inline_objects(mut params: SyncInlineParams) {
     let force_warp_sync = matches!(
         presentation.mode,
         TerminalPresentationMode::Plane3d | TerminalPresentationMode::Mobius3d
-    )
-        && plane_warp.amount > 0.0
+    ) && plane_warp.amount > 0.0
         && !inline_objects.anchors.is_empty();
     if !force_warp_sync && !inline_objects.needs_sync(viewport.size, terminal.cols, terminal.rows) {
         return;

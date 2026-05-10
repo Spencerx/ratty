@@ -447,12 +447,8 @@ pub(crate) fn apply_terminal_presentation(
 
     for mut transform in &mut plane_transforms.p1() {
         if is_3d {
-            transform.rotation = Quat::from_euler(
-                EulerRot::XYZ,
-                pitch,
-                yaw + std::f32::consts::PI,
-                0.0,
-            );
+            transform.rotation =
+                Quat::from_euler(EulerRot::XYZ, pitch, yaw + std::f32::consts::PI, 0.0);
             transform.translation = if is_mobius {
                 Vec3::ZERO
             } else {
