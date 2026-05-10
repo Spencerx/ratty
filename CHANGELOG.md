@@ -4,8 +4,11 @@
 <br>
 <sup>Inspired by TempleOS | Built with Rust & Ratatui</sup>
 
-## Unreleased
+## 0.1.0-rc.1 - 2026-05-10
 
+- chore: release 0.1.0 of ratatui-ratty by @orhun
+- chore: expand the target checks in CI by @orhun
+- chore: set up release workflow by @orhun
 - chore: add macos build step by @orhun
 - docs: update video link in website by @orhun
 - docs: add link to demo video by @orhun
