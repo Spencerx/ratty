@@ -8,7 +8,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
-    layout::Rect,
+    layout::{Rect, Size},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph, Widget},
@@ -81,7 +81,7 @@ impl TempleEditor {
             scroll: 0,
             viewport_height: 1,
             image: picker
-                .new_protocol(image, Rect::new(0, 0, 18, 12), Resize::Fit(None))
+                .new_protocol(image, Size::new(18, 12), Resize::Fit(None))
                 .map_err(io::Error::other)?,
             show_logo: true,
         };

@@ -1,6 +1,6 @@
 [package]
 name = "ratatui-ratty"
-version = "0.1.0-rc.0"
+version = "0.1.0"
 description = "A Ratatui widget for rendering inline 3D graphics via Ratty Graphics Protocol"
 authors = ["Orhun Parmaksız <orhunparmaksiz@gmail.com>"]
 license = "MIT"
@@ -18,4 +18,4 @@ ratatui-core = "0.1.0"
 crossterm = "0.29"
 image = "0.25.10"
 ratatui = "0.30"
-ratatui-image = { version = "10.0.6", default-features = false, features = ["crossterm", "image-defaults"] }
+ratatui-image = { version = "11.0.1", default-features = false, features = ["crossterm", "image-defaults"] }
