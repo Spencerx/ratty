@@ -10,8 +10,6 @@ header = """
 <img width="240" src="https://raw.githubusercontent.com/orhun/ratty/refs/heads/main/website/assets/images/ratty-logo.gif" alt="Ratty logo" />
 
 <strong>Ratty</strong>: A GPU-rendered terminal emulator with inline 3D graphics 🧀
-<br>
-<sup>Inspired by TempleOS | Built with Rust & Ratatui</sup>
 """
 
 # A Tera template to be rendered for each release in the changelog.
