@@ -5,11 +5,6 @@ use std::{
 };
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use ratatui_image::{
-    Image as TerminalImage, Resize,
-    picker::{Picker, ProtocolType},
-    protocol::Protocol,
-};
 use ratatui::{
     DefaultTerminal,
     buffer::Buffer,
@@ -17,6 +12,11 @@ use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Paragraph, Widget},
+};
+use ratatui_image::{
+    Image as TerminalImage, Resize,
+    picker::{Picker, ProtocolType},
+    protocol::Protocol,
 };
 use ratatui_ratty::{RattyGraphic, RattyGraphicSettings};
 
@@ -121,7 +121,9 @@ impl TempleEditor {
         )))
         .render(header, buf);
 
-        let block = Block::bordered().border_style(Style::default().fg(Color::White)).title("TempleOS-Notes.HC");
+        let block = Block::bordered()
+            .border_style(Style::default().fg(Color::White))
+            .title("TempleOS-Notes.HC");
         let inner = block.inner(body);
         block.render(body, buf);
 
@@ -147,20 +149,15 @@ impl TempleEditor {
                 image_height,
             );
             frame.render_widget(TerminalImage::new(&self.image), image_area);
-            let caption_y = image_area.y.saturating_add(image_area.height).saturating_sub(3);
+            let caption_y = image_area
+                .y
+                .saturating_add(image_area.height)
+                .saturating_sub(3);
             if caption_y < inner.y.saturating_add(inner.height) {
                 frame.render_widget(
-                    Paragraph::new("TempleOS logo\nrendered by Kitty\nImage protocol").style(
-                        Style::default()
-                            .fg(Color::White)
-                            .italic(),
-                    ),
-                    Rect::new(
-                        image_area.x,
-                        caption_y,
-                        image_area.width,
-                        3,
-                    ),
+                    Paragraph::new("TempleOS logo\nrendered by Kitty\nImage protocol")
+                        .style(Style::default().fg(Color::White).italic()),
+                    Rect::new(image_area.x, caption_y, image_area.width, 3),
                 );
             }
         }

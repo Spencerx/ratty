@@ -39,9 +39,15 @@ fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
                 Span::styled("+/-", Style::default().fg(Color::Cyan)),
                 Span::raw(format!(": scale ({:.1})  ", graphic.settings().scale)),
                 Span::styled("[/]", Style::default().fg(Color::Cyan)),
-                Span::raw(format!(": brightness ({:.1})  ", graphic.settings().brightness)),
+                Span::raw(format!(
+                    ": brightness ({:.1})  ",
+                    graphic.settings().brightness
+                )),
                 Span::styled("a", Style::default().fg(Color::Cyan)),
-                Span::raw(format!(": animate ({})  ", u8::from(graphic.settings().animate))),
+                Span::raw(format!(
+                    ": animate ({})  ",
+                    u8::from(graphic.settings().animate)
+                )),
                 Span::styled("c", Style::default().fg(Color::Cyan)),
                 Span::raw(": clear  "),
                 Span::styled("r", Style::default().fg(Color::Cyan)),
@@ -49,11 +55,11 @@ fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
                 Span::styled("q", Style::default().fg(Color::Cyan)),
                 Span::raw(": quit"),
             ]))
-                .block(Block::bordered().title(Span::styled(
-                    "Ratty Graphics Protocol Demo",
-                    Style::default().fg(Color::Yellow),
-                )))
-                .render(Rect::new(0, 0, screen.width, 3), frame.buffer_mut());
+            .block(Block::bordered().title(Span::styled(
+                "Ratty Graphics Protocol Demo",
+                Style::default().fg(Color::Yellow),
+            )))
+            .render(Rect::new(0, 0, screen.width, 3), frame.buffer_mut());
 
             let viewport = Rect::new(0, 3, screen.width, screen.height.saturating_sub(3));
             Block::bordered().render(viewport, frame.buffer_mut());

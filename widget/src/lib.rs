@@ -1,9 +1,9 @@
 #![doc = include_str!("../README.md")]
 
+use ratatui_core::{buffer::Buffer, layout::Rect, widgets::Widget};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::Path;
-use ratatui_core::{buffer::Buffer, layout::Rect, widgets::Widget};
 
 /// Object asset format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
