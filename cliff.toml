@@ -7,7 +7,7 @@ repo = "ratty"
 
 [changelog]
 header = """
-![Ratty logo](https://raw.githubusercontent.com/orhun/ratty/refs/heads/main/website/assets/images/ratty-logo.gif)
+<img width="240" src="https://raw.githubusercontent.com/orhun/ratty/refs/heads/main/website/assets/images/ratty-logo.gif" alt="Ratty logo" />
 
 **Ratty**: A GPU-rendered terminal emulator with inline 3D graphics 🧀
 

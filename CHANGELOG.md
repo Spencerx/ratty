@@ -1,8 +1,23 @@
 <img width="240" src="https://raw.githubusercontent.com/orhun/ratty/refs/heads/main/website/assets/images/ratty-logo.gif" alt="Ratty logo" />
 
-<strong>Ratty</strong>: A GPU-rendered terminal emulator with inline 3D graphics 🧀
-<br>
-<sup>Inspired by TempleOS | Built with Rust & Ratatui</sup>
+> **Ratty**: A GPU-rendered terminal emulator with inline 3D graphics 🧀  
+> [ratty-term.org](https://ratty-term.org)
+
+We're excited to announce the first public release of Ratty! 🐁
+
+- Read the blog: https://blog.orhun.dev/introducing-ratty
+- Demo video: https://www.youtube.com/watch?v=cY9AX5j-osY
+
+<div>
+  <video src="https://github.com/user-attachments/assets/17eda86b-d00f-401b-9cf4-38343fa71386" alt="Ratty Demo"/>
+</div>
+
+## 0.2.0 - 2026-05-11
+
+- docs: expand installation section by @orhun
+- chore: adjust the release workflow by @orhun
+- chore: update changelog header by @orhun
+- chore: update changelog header by @orhun
 
 ## 0.1.0-rc.1 - 2026-05-10
 
