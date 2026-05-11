@@ -40,8 +40,25 @@ Requirements:
 
 - Rust toolchain with Cargo
 - A GPU / graphics stack supported by Bevy and wgpu
+- Melted cheese (optional but recommended)
 
-### From source
+### [crates.io](https://crates.io/crates/ratty)
+
+```bash
+cargo install ratty
+```
+
+### [Arch Linux](https://archlinux.org/packages/extra/x86_64/ratty/)
+
+```bash
+pacman -S ratty
+```
+
+### Binary releases
+
+Prebuilt binaries are available on the [GitHub releases page](https://github.com/orhun/ratty/releases) for direct download.
+
+### From Git
 
 ```bash
 cargo install --git https://github.com/orhun/ratty
@@ -194,7 +211,7 @@ Ratty logo designed by [@Strophox](https://github.com/Strophox) & [@Harunocaksiz
 
 ## Copyright
 
-Copyright © 2025, [Orhun Parmaksız](mailto:orhunparmaksiz@gmail.com)
+Copyright © 2026, [Orhun Parmaksız](mailto:orhunparmaksiz@gmail.com)
 
 <sup>
 The author does not have a rat under the hat!
