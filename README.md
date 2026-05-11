@@ -23,7 +23,8 @@ Inspired by TempleOS | Built with Rust & Ratatui
 - [GPU-backed text rendering](#rendering-pipeline)
 - Image support (via Kitty Graphics Protocol >:\()
 
-[Watch the demo video here!](https://youtu.be/cY9AX5j-osY) ▶️
+▶️ [Watch the demo video here!](https://youtu.be/cY9AX5j-osY)  
+📚 [Read the behind the scenes blog post here!](https://blog.orhun.dev/introducing-ratty)
 
 ### 3D mode
 
