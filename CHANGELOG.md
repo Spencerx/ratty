@@ -7,6 +7,10 @@
 
 Read **The Register** article about Ratty: ["Rodent-obsessed developer creates Ratty to bring 3D graphics to the command line"](https://www.theregister.com/software/2026/05/11/ratty-terminal-emulator-brings-3d-graphics-to-the-command-line/5238299)
 
+<div>
+  <video src="https://github.com/user-attachments/assets/a81598a9-e57c-4ba7-b840-5044e6e279cf" alt="Ratty Demo"/>
+</div>
+
 ### Features
 
 - Support transform and update control for 3D objects by @orhun in [#39](https://github.com/orhun/ratty/pull/39)
@@ -47,7 +51,6 @@ graphic.update()?;
 ```
 
 </details>
-<br>
 
 - Support inline payloads by @orhun in [#41](https://github.com/orhun/ratty/pull/41)
 
@@ -82,7 +85,6 @@ graphic.register_payload(&obj_bytes)?;
 ```
 
 </details>
-<br>
 
 - Support keyboard scrollback navigation by @orhun in [#35](https://github.com/orhun/ratty/pull/35)
 
