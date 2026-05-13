@@ -1,5 +1,4 @@
 use std::io;
-use std::path::{Path, PathBuf};
 
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
@@ -21,7 +20,7 @@ fn main() -> io::Result<()> {
 
 fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
     let mut graphic = RattyGraphic::new(
-        RattyGraphicSettings::new(workspace_asset_string("assets/objects/SpinyMouse.glb"))
+        RattyGraphicSettings::new("assets/objects/SpinyMouse.glb")
             .id(7)
             .animate(true)
             .scale(1.0),
@@ -42,6 +41,13 @@ fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
                 Span::raw(format!(
                     ": brightness ({:.1})  ",
                     graphic.settings().brightness
+                )),
+                Span::styled("1-6", Style::default().fg(Color::Cyan)),
+                Span::raw(format!(
+                    ": rot [{:.0}, {:.0}, {:.0}]  ",
+                    graphic.settings().rotation[0],
+                    graphic.settings().rotation[1],
+                    graphic.settings().rotation[2]
                 )),
                 Span::styled("a", Style::default().fg(Color::Cyan)),
                 Span::raw(format!(
@@ -84,6 +90,7 @@ fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
         })?;
 
         if let Event::Key(key) = event::read()? {
+            let mut send_update = false;
             match (key.code, key.modifiers) {
                 (KeyCode::Char('q'), _) => {
                     graphic.clear()?;
@@ -95,26 +102,60 @@ fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
                 (KeyCode::Char('a'), _) => {
                     let animate = graphic.settings().animate;
                     graphic.settings_mut().animate = !animate;
+                    send_update = true;
                 }
                 (KeyCode::Char('r'), _) => {
                     area = Rect::new(0, 0, 24, 10);
                     graphic.settings_mut().animate = true;
-                    graphic.settings_mut().scale = 1.0;
-                    graphic.settings_mut().brightness = 0.9;
+                    *graphic.settings_mut() =
+                        RattyGraphicSettings::new("assets/objects/SpinyMouse.glb")
+                            .id(7)
+                            .animate(true)
+                            .scale(1.0)
+                            .brightness(0.9);
                     centered = false;
+                    send_update = true;
                 }
                 (KeyCode::Char('+'), _) | (KeyCode::Char('='), _) => {
                     graphic.settings_mut().scale += 0.1;
+                    send_update = true;
                 }
                 (KeyCode::Char('-'), _) => {
                     graphic.settings_mut().scale = (graphic.settings().scale - 0.1).max(0.1);
+                    send_update = true;
                 }
                 (KeyCode::Char(']'), _) => {
                     graphic.settings_mut().brightness += 0.1;
+                    send_update = true;
                 }
                 (KeyCode::Char('['), _) => {
                     graphic.settings_mut().brightness =
                         (graphic.settings().brightness - 0.1).max(0.1);
+                    send_update = true;
+                }
+                (KeyCode::Char('1'), _) => {
+                    graphic.settings_mut().rotation[0] -= 15.0;
+                    send_update = true;
+                }
+                (KeyCode::Char('2'), _) => {
+                    graphic.settings_mut().rotation[0] += 15.0;
+                    send_update = true;
+                }
+                (KeyCode::Char('3'), _) => {
+                    graphic.settings_mut().rotation[1] -= 15.0;
+                    send_update = true;
+                }
+                (KeyCode::Char('4'), _) => {
+                    graphic.settings_mut().rotation[1] += 15.0;
+                    send_update = true;
+                }
+                (KeyCode::Char('5'), _) => {
+                    graphic.settings_mut().rotation[2] -= 15.0;
+                    send_update = true;
+                }
+                (KeyCode::Char('6'), _) => {
+                    graphic.settings_mut().rotation[2] += 15.0;
+                    send_update = true;
                 }
                 (KeyCode::Left, _) => {
                     area.x = area.x.saturating_sub(1);
@@ -130,19 +171,12 @@ fn run(terminal: &mut DefaultTerminal) -> io::Result<()> {
                 }
                 _ => {}
             }
+
+            if send_update {
+                graphic.update()?;
+            }
         }
     }
-}
-
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("widget crate should live under the workspace root")
-        .to_path_buf()
-}
-
-fn workspace_asset_string(path: impl AsRef<Path>) -> String {
-    workspace_root().join(path).to_string_lossy().into_owned()
 }
 
 fn clamp_rect(mut rect: Rect, bounds: Rect) -> Rect {
