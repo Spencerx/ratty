@@ -3,6 +3,114 @@
 > **Ratty**: A GPU-rendered terminal emulator with inline 3D graphics 🧀  
 > [ratty-term.org](https://ratty-term.org)
 
+## 0.3.0 - 2026-05-13
+
+Read **The Register** article about Ratty: ["Rodent-obsessed developer creates Ratty to bring 3D graphics to the command line"](https://www.theregister.com/software/2026/05/11/ratty-terminal-emulator-brings-3d-graphics-to-the-command-line/5238299)
+
+### Features
+
+- Support transform and update control for 3D objects by @orhun in [#39](https://github.com/orhun/ratty/pull/39)
+
+You can now set the position, rotation and scale of inline 3D objects in Ratty and update them in-place after placement.
+
+The following RGP sequence first registers (`r`) an object, then places it (`p`) and finally updates its rotation, position and brightness (`u`).
+
+```text
+ESC _ ratty;g;r;id=7;fmt=glb;path=SpinyMouse.glb ESC \
+ESC _ ratty;g;p;id=7;row=5;col=10;w=3;h=2;depth=1.5;rx=0;ry=30;rz=0;sx=1;sy=1;sz=1 ESC \
+ESC _ ratty;g;u;id=7;ry=120;px=0.25;brightness=1.2 ESC \
+```
+
+<details>
+  <summary>Example usage in Rust</summary>
+
+```rust
+use ratatui_core::{buffer::Buffer, layout::Rect, widgets::Widget};
+use ratatui_ratty::{ObjectFormat, RattyGraphic, RattyGraphicSettings};
+
+let mut graphic = RattyGraphic::new(
+    RattyGraphicSettings::new("assets/objects/SpinyMouse.glb")
+        .id(7)
+        .format(ObjectFormat::Glb)
+        .rotation([0.0, 30.0, 0.0])
+        .scale3([1.0, 1.0, 1.0]),
+);
+
+graphic.register()?;
+
+let mut buf = Buffer::empty(Rect::new(0, 0, 80, 24));
+(&graphic).render(Rect::new(10, 5, 24, 10), &mut buf);
+
+graphic.settings_mut().rotation = [0.0, 120.0, 0.0];
+graphic.settings_mut().brightness = 1.2;
+graphic.update()?;
+```
+
+</details>
+<br>
+
+- Support inline payloads by @orhun in [#41](https://github.com/orhun/ratty/pull/41)
+
+You can now register 3D objects from payload data sent directly over the Ratty Graphics Protocol, without needing to provide a local file path first.
+
+This will make it possible to e.g. send 3D object data from SSH sessions! 🎉
+
+Example registration pipeline (with `source=payload` and `more` fields to indicate chunking):
+
+```text
+ESC _ ratty;g;r;id=42;fmt=obj;source=payload;more=1;name=rat.obj;<base64 chunk 1> ESC \
+ESC _ ratty;g;r;id=42;fmt=obj;source=payload;more=1;<base64 chunk 2> ESC \
+ESC _ ratty;g;r;id=42;fmt=obj;source=payload;more=0;<base64 chunk N> ESC \
+ESC _ ratty;g;p;id=42;row=12;col=8;w=4;h=2 ESC \
+```
+
+<details>
+  <summary>Example usage in Rust</summary>
+
+```rust
+use ratatui_ratty::{ObjectFormat, RattyGraphic, RattyGraphicSettings};
+
+let graphic = RattyGraphic::new(
+    RattyGraphicSettings::new("live_draw.obj")
+        .id(42)
+        .format(ObjectFormat::Obj),
+);
+
+let obj_bytes = std::fs::read("live_draw.obj")?;
+
+graphic.register_payload(&obj_bytes)?;
+```
+
+</details>
+<br>
+
+- Support keyboard scrollback navigation by @orhun in [#35](https://github.com/orhun/ratty/pull/35)
+
+Here are new (customizable) key bindings for navigating Ratty's local scrollback without using the mouse:
+
+- `Alt+PageUp`: scroll one page up
+- `Alt+PageDown`: scroll one page down
+- `Alt+Up`: scroll one line up
+- `Alt+Down`: scroll one line down
+
+### Bug Fixes
+
+- Fall back to `$SHELL` or `/bin/sh` by default by @orhun in [#36](https://github.com/orhun/ratty/pull/36)
+
+### Documentation
+
+- Update README.md to run the install command for arch and dependency install commands for other Distros by @zalanwastaken in [#38](https://github.com/orhun/ratty/pull/38)
+- Document necessary prerequisites for Linux by @jokeyrhyme in [#10](https://github.com/orhun/ratty/pull/10)
+
+### New Contributors
+
+- @zalanwastaken made their first contribution in [#38](https://github.com/orhun/ratty/pull/38)
+- @jokeyrhyme made their first contribution in [#10](https://github.com/orhun/ratty/pull/10)
+
+**Full Changelog**: https://github.com/orhun/ratty/compare/v0.2.0...0.3.0
+
+## 0.2.0 - 2026-05-11
+
 We're excited to announce the first public release of Ratty! 🐁
 
 - Read the blog: https://blog.orhun.dev/introducing-ratty
@@ -11,8 +119,6 @@ We're excited to announce the first public release of Ratty! 🐁
 <div>
   <video src="https://github.com/user-attachments/assets/17eda86b-d00f-401b-9cf4-38343fa71386" alt="Ratty Demo"/>
 </div>
-
-## 0.2.0 - 2026-05-11
 
 - docs: expand installation section by @orhun
 - chore: adjust the release workflow by @orhun
