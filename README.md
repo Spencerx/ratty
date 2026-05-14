@@ -38,6 +38,8 @@ Ever wondered what's _behind_ the terminal? Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>
 
 ## Installation
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/ratty.svg)](https://repology.org/project/ratty/versions)
+
 Requirements:
 
 - A GPU / graphics stack supported by Bevy and wgpu
