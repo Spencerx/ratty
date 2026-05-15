@@ -15,7 +15,8 @@ Inspired by TempleOS | Built with Rust & Ratatui
   <video src="https://github.com/user-attachments/assets/17eda86b-d00f-401b-9cf4-38343fa71386" alt="Ratty Demo"/>
 </div>
 
-["Rodent-obsessed developer creates Ratty to bring 3D graphics to the command line"](https://www.theregister.com/software/2026/05/11/ratty-terminal-emulator-brings-3d-graphics-to-the-command-line/5238299) - The Register
+["Rodent-obsessed developer creates Ratty to bring 3D graphics to the command line"](https://www.theregister.com/software/2026/05/11/ratty-terminal-emulator-brings-3d-graphics-to-the-command-line/5238299) - The Register  
+["This New Terminal is Absurd (But Totally Fun)"](https://itsfoss.com/ratty-terminal/) - It's FOSS
 
 ## Features
 
