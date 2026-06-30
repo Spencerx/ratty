@@ -65,10 +65,18 @@ impl TerminalInlineObjects {
                 .windows(APC_START.len())
                 .position(|window| window == APC_START)
             else {
-                if cursor < self.pending_bytes.len() {
-                    parser.process(&normalize_hvp_sequences(&self.pending_bytes[cursor..]));
+                let pending_len = self.pending_bytes.len();
+                let keep_from = pending_apc_prefix_start(&self.pending_bytes, cursor);
+                if cursor < keep_from {
+                    parser.process(&normalize_hvp_sequences(
+                        &self.pending_bytes[cursor..keep_from],
+                    ));
                 }
-                self.pending_bytes.clear();
+                if keep_from < pending_len {
+                    self.pending_bytes.drain(..keep_from);
+                } else {
+                    self.pending_bytes.clear();
+                }
                 return replies;
             };
             let start = cursor + start_offset;
@@ -496,6 +504,15 @@ fn normalize_hvp_sequences(bytes: &[u8]) -> Cow<'_, [u8]> {
     match normalized {
         Some(bytes) => Cow::Owned(bytes),
         None => Cow::Borrowed(bytes),
+    }
+}
+
+fn pending_apc_prefix_start(bytes: &[u8], cursor: usize) -> usize {
+    let start = cursor.min(bytes.len());
+    if bytes[start..].ends_with(&APC_START[..1]) {
+        bytes.len() - 1
+    } else {
+        bytes.len()
     }
 }
 

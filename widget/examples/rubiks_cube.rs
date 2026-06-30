@@ -1,10 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::VecDeque,
-    fs, io,
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::{collections::VecDeque, io, time::{Duration, Instant}};
 
 use crossterm::{
     event::{
@@ -502,10 +496,9 @@ impl SceneObject {
 
     fn register_cube(&mut self, cube: &RubiksCube) -> io::Result<()> {
         self.model_revision = self.model_revision.wrapping_add(1);
-        let path = self.asset_path()?;
-        fs::write(&path, CubeObj::from_cube(cube).into_bytes())?;
-        self.graphic.settings_mut().path = Cow::Owned(path.to_string_lossy().into_owned());
-        self.graphic.register()
+        let name = format!("rubiks-cube-v5-{}.obj", self.model_revision);
+        let bytes = CubeObj::from_cube(cube).into_bytes();
+        self.graphic.register_payload_with_name(&bytes, Some(&name))
     }
 
     fn apply(&mut self, rotation: Mat3, metrics: &SceneMetrics) {
@@ -524,11 +517,6 @@ impl SceneObject {
         self.graphic.clear()
     }
 
-    fn asset_path(&self) -> io::Result<PathBuf> {
-        let dir = std::env::temp_dir().join("ratty-rubiks-cube");
-        fs::create_dir_all(&dir)?;
-        Ok(dir.join(format!("rubiks-cube-v5-{}.obj", self.model_revision)))
-    }
 }
 
 struct SceneMetrics {
