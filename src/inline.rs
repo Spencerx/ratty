@@ -9,7 +9,7 @@ use vt100::Callbacks;
 
 use crate::kitty::{KittyOperation, KittyParserState, refresh_kitty_placeholder_anchors};
 use crate::model::{
-    ObjectLoadOptions, ObjectSource, load_object_source_from_bytes_with_options,
+    ObjectLoadOptions, load_object_source_from_bytes_with_options,
     load_object_source_with_options,
 };
 use crate::rgp::{
@@ -263,7 +263,7 @@ impl TerminalInlineObjects {
                 let load_options = ObjectLoadOptions {
                     normalize: options.normalize,
                 };
-                if format != "obj" && format != "glb" {
+                if format != "obj" && format != "glb" && format != "stl" {
                     warn!("unsupported RGP object format `{format}` for object {object_id}");
                     None
                 } else {
@@ -273,21 +273,7 @@ impl TerminalInlineObjects {
                             match load_object_source_with_options(Path::new(&path), load_options) {
                                 Ok((source, source_data)) => {
                                     info!("registered RGP object {} from {}", object_id, source);
-                                    self.objects.insert(
-                                        object_id,
-                                        InlineObject::RgpObject(match source_data {
-                                            ObjectSource::Obj(meshes) => RgpInlineObject::Obj {
-                                                meshes,
-                                                handles: None,
-                                            },
-                                            ObjectSource::Gltf(asset_path) => {
-                                                RgpInlineObject::Gltf {
-                                                    asset_path,
-                                                    handle: None,
-                                                }
-                                            }
-                                        }),
-                                    );
+                                    self.objects.insert(object_id, source_data.into());
                                     self.dirty = true;
                                     None
                                 }
@@ -439,19 +425,7 @@ impl TerminalInlineObjects {
         ) {
             Ok((source, source_data)) => {
                 info!("registered RGP object {} from {}", object_id, source);
-                self.objects.insert(
-                    object_id,
-                    InlineObject::RgpObject(match source_data {
-                        ObjectSource::Obj(meshes) => RgpInlineObject::Obj {
-                            meshes,
-                            handles: None,
-                        },
-                        ObjectSource::Gltf(asset_path) => RgpInlineObject::Gltf {
-                            asset_path,
-                            handle: None,
-                        },
-                    }),
-                );
+                self.objects.insert(object_id, source_data.into());
                 self.dirty = true;
                 None
             }
@@ -562,6 +536,14 @@ pub struct KittyInlineObject {
 
 /// RGP-backed inline object.
 pub enum RgpInlineObject {
+    /// STL mesh payload.
+    Stl {
+        /// The loaded mesh
+        mesh: Mesh,
+        /// This gets created on the fly when it's actually needed.
+        /// If you are creating a [`RgpInlineObject`], chances are that you can set this to `None`.
+        handle: Option<Handle<Mesh>>,
+    },
     /// OBJ mesh payload.
     Obj {
         /// Loaded mesh parts.

@@ -796,6 +796,46 @@ fn spawn_rgp_object(
                 SceneRoot(handle),
             ));
         }
+        crate::inline::RgpInlineObject::Stl { mesh, handle } => {
+            let use_lighting = true;
+            let [r, g, b] = match style.color {
+                Some([r, g, b]) => [r, g, b],
+                None => [255, 255, 255],
+            };
+            let material = materials.add(StandardMaterial {
+                base_color: Color::srgb_u8(r, g, b),
+                emissive: if use_lighting {
+                    LinearRgba::rgb(0.02, 0.02, 0.02)
+                } else {
+                    LinearRgba::rgb(0.0, 0.0, 0.0)
+                },
+                metallic: 0.0,
+                perceptual_roughness: if use_lighting { 0.88 } else { 1.0 },
+                reflectance: if use_lighting { 0.18 } else { 0.0 },
+                cull_mode: None,
+                unlit: !use_lighting,
+                ..default()
+            });
+            let root = commands
+                .spawn((
+                    TerminalRgpObject { object_id },
+                    Transform::default(),
+                    Visibility::Visible,
+                ))
+                .id();
+
+            let mesh_handle = meshes.add(extrude_mesh(mesh.clone(), style.depth));
+            *handle = Some(mesh_handle.clone());
+
+            let child = commands
+                .spawn((
+                    Mesh3d(mesh_handle),
+                    MeshMaterial3d(material.clone()),
+                    Transform::default(),
+                ))
+                .id();
+            commands.entity(root).add_child(child);
+        }
     }
 }
 

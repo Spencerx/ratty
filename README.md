@@ -108,7 +108,7 @@ bob_speed = 2.2
 bob_amplitude = 0.08
 ```
 
-For [`cursor.model.path`](config/ratty.toml), Ratty supports both `.obj` and `.glb` assets.
+For [`cursor.model.path`](config/ratty.toml), Ratty supports both `.obj`, `.glb`, and `.stl` assets.
 
 Other useful cursor fields are:
 
@@ -143,7 +143,7 @@ to place inline 3D objects in terminal space.
 
 RGP supports:
 
-- registering `.obj` and `.glb` assets by path
+- registering `.obj`, `.glb`, and `.stl` assets by path
 - placing them at terminal cell anchors
 - animation, scale, color, depth and other attributes
 
